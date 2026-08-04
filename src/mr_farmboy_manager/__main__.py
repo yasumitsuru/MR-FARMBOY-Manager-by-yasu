@@ -1,5 +1,6 @@
 """Entrada de ponto principal para execução com python -m mr_farmboy_manager."""
 
+import sys
 from .application import run
 
 
@@ -13,4 +14,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

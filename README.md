@@ -47,7 +47,7 @@ O MR FARMBOY Manager é um painel desktop projetado para análise financeira e g
 
 ## Recursos do Jogo
 
-> ⚠️ **ATENÇÃO**: Não distribuímos recursos protegidos de direitos autorais.
+> ⚠️ **ATENÇÃO**: Não distribuímos recursos protegidos por direitos autorais.
 
 - Ícones e recursos originais **não serão distribuídos** neste repositório;
 - Futuramente, o programa poderá **localizar recursos na instalação pertencente ao usuário**;
@@ -74,35 +74,36 @@ Este é um projeto independente feito por fãs para fins de análise pessoal.
 
 ---
 
-## Instalação
-
-🚧 **Em desenvolvimento**
-
 ## Executando o projeto durante o desenvolvimento
 
 ### Pré-requisitos
+
 - Python 3.12 ou superior
 
 ### Passos para execução
 
 1. **Criar ou ativar o ambiente virtual**:
+
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
    ```
 
 2. **Instalar o projeto com dependências de desenvolvimento**:
+
    ```bash
    pip install --upgrade pip
    pip install -e ".[dev]"
    ```
 
 3. **Executar a aplicação**:
+
    ```bash
    python -m mr_farmboy_manager
    ```
 
 4. **Executar os testes**:
+
    ```bash
    pytest tests/ -v
    ```

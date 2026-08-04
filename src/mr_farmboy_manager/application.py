@@ -13,21 +13,39 @@ from PySide6.QtCore import Qt
 
 
 def create_application() -> QApplication:
-    """Cria uma instância da aplicação Qt.
+    """Cria ou retorna uma instância da aplicação Qt.
+
+    Consultará QApplication.instance() primeiro para reutilizar uma instância
+    já existente, garantindo que apenas uma instância de QApplication exista
+    por processo.
 
     Returns:
-        Instância de QApplication configurada.
+        Instância de QApplication (nova se não existir, ou a existente).
     """
-    app = QApplication([])
+    # Tenta reutilizar instância existente
+    app = QApplication.instance()
+
+    if app is None:
+        # Cria nova instância apenas se não houver aplicação existente
+        app = QApplication([])
+
     return app
 
 
-def create_main_window() -> QMainWindow:
+def create_main_window(app: QApplication | None = None) -> QMainWindow:
     """Cria a janela principal da aplicação.
+
+    Args:
+        app: Instância de QApplication opcional. Se None, será buscada automaticamente.
 
     Returns:
         Instância de QMainWindow configurada com interface básica.
     """
+    if app is None:
+        app = QApplication.instance()
+        if app is None:
+            raise RuntimeError("QApplication não disponível e não foi fornecida.")
+
     window = QMainWindow()
     window.setWindowTitle("MR FARMBOY Manager by yasu")
     window.resize(1000, 650)
@@ -58,6 +76,6 @@ def run() -> int:
         Código de saída da aplicação (0 para sucesso).
     """
     app = create_application()
-    window = create_main_window()
+    window = create_main_window(app)
     window.show()
     return app.exec()
