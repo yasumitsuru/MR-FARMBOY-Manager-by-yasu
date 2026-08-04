@@ -1,12 +1,11 @@
-"""Módulo de carregamento básico do save do MR FARMBOY.
+"""Módulo de carregamento básico de arquivos binários.
 
-Este módulo fornece funcionalidades mínimas para ler um arquivo de save do jogo
-em modo binário, sem modificar o arquivo original ou realizar parsing específico.
+Este módulo fornece funcionalidades para ler arquivos em modo binário,
+não modificando o arquivo original e sem realizar parsing específico.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import NamedTuple
 
@@ -37,17 +36,6 @@ def load_save(save_path: str | Path) -> SaveLoadResult:
         - error_message: mensagem de erro, None se sucesso
         - size_bytes: tamanho em bytes do arquivo
         - data: conteúdo binário do arquivo (apenas leitura)
-
-    Raises:
-        FileNotFoundError: Se o caminho apontar para diretório, não arquivo.
-        PermissionError: Sem permissão para ler o arquivo.
-        ValueError: Arquivo vazio ou menor que 1 byte.
-
-    Notes:
-        - O arquivo original NÃO é modificado.
-        - Apenas leitura binária (modo 'rb').
-        - Não há parsing do conteúdo específico do jogo.
-        - Tamanho mínimo esperado: >= 1 byte (arquivos vazios são considerados inválidos).
     """
     path = Path(save_path)
 

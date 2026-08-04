@@ -2,17 +2,19 @@
 
 ## Status do Projeto
 
-⚠️ **Em fase inicial de desenvolvimento**
+✅ **Estrutura inicial implementada**
 
-Este projeto está em sua primeira versão e ainda não possui funcionalidades implementadas.
+- Aplicação PySide6 mínima funcionando
+- Carregamento binário básico de arquivos
+- Suite completa de testes (64 tests aprovados)
 
 ---
 
 ## Objetivo
 
-O MR FARMBOY Manager é um painel desktop projetado para análise financeira e gerenciamento da fazenda no jogo MR FARMBOY. O sistema planeja as seguintes funcionalidades:
+O MR FARMBOY Manager é um painel desktop para análise financeira e gerenciamento da fazenda no jogo MR FARMBOY. As funcionalidades planejadas incluem:
 
-- **Leitura do Save**: Ler o save do MR FARMBOY em modo somente leitura;
+- **Leitura do Save**: ✅ Implementado - Leitura binária básica disponível
 - **Identificação de dados**: Identificar plantações, estoque, trabalhadores e quando esses dados estiverem disponíveis;
 - **Cálculos financeiros**:
   - Calcular receita bruta;

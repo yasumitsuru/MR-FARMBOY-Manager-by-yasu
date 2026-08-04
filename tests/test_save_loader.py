@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from unittest.mock import patch
 
 from mr_farmboy_manager.save_loader import load_save, validate_save_file, SaveLoadResult
 
@@ -14,7 +15,7 @@ class TestLoadSave:
 
     def test_load_arquivo_valido_retorna_success_true(self, tmp_path: Path) -> None:
         """Verifies that valid file returns success=True."""
-        # Cria um arquivo de teste com conteúdo binário
+        # Cria um arquivo de teste com conteudo binario
         test_file = tmp_path / "test_save.bin"
         test_data = b"\x00\x01\x02\x03TEST_DATA"
 
@@ -75,15 +76,21 @@ class TestLoadSave:
         assert result.success is True
         assert result.data == test_data
 
-    def test_load_sem_permissao_retorna_success_false(self, tmp_path: Path) -> None:
-        """Verifies permission denied handling (rare on Windows)."""
+    def test_load_sem_permissao_simulado_com_mock(self, tmp_path: Path) -> None:
+        """Verifies permission denied handling using unittest.mock."""
+        from unittest.mock import patch
+        
         test_file = tmp_path / "protected.bin"
-        test_file.write_bytes(b"test data")
+        test_data = b"test data"
+        test_file.write_bytes(test_data)
 
-        # Tenta carregar arquivo existente - deve funcionar (tem permissão)
-        result = load_save(test_file)
+        with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+            result = load_save(str(test_file))
 
-        assert result.success is True
+        assert result.success is False
+        assert result.error_message is not None
+        assert "permissoes" in result.error_message.lower() or "permission" in result.error_message.lower()
+        assert result.data is None
 
     def test_load_caminho_diretorio_retorna_success_false(self, tmp_path: Path) -> None:
         """Verifies that directory is treated as error."""
