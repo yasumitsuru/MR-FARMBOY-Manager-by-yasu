@@ -9,8 +9,6 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
-import os
-import stat
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,12 +80,12 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
     # Inicializa todas as variáveis antes do try principal
     temp_dir: str | None = None
     snapshot_path_str: str | None = None
-    original_stat_info: os.stat_result | None = None
-    original_mtime_ns_before: int | 0 = 0
-    original_size_bytes_before: int | 0 = 0
+    original_stat_info: Path.stat_result | None = None
+    original_mtime_ns_before: int = 0
+    original_size_bytes_before: int = 0
 
     try:
-        # Verifica se é diretório antes de tentar ler (evita confusão com Permiss�oError no Windows)
+        # Verifica se é diretório antes de tentar ler (evita confusão com PermissionError no Windows)
         if path.is_dir():
             raise FileNotFoundError(f"Caminho aponta para um diretório, não para um arquivo: {path}")
 
@@ -108,12 +106,9 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
     except FileNotFoundError:
         raise FileNotFoundError(f"Caminho não aponta para um arquivo válido: {path}")
     except IsADirectoryError:
-        # Tratar explicitamente caminhos que apontam para diretórios
         raise IsADirectoryError(f"Caminho aponta para um diretório, não para um arquivo: {path}") from None
     except PermissionError as e:
         raise PermissionError(f"Sem permissão para ler o arquivo original: {path}") from e
-    except IOError as e:
-        raise PermissionError(f"Erro ao acessar arquivo original: {e}") from e
 
     try:
         # Cria pasta temporária usando mkdtemp com prefixo específico
@@ -124,11 +119,12 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         # Copia o arquivo com metadados preservados (shutil.copy2)
         shutil.copy2(path, snapshot_path)
 
-        # Lê a cópia para verificar integridade antes de yield
-        snapshot_data = snapshot_path.read_bytes()
+        # Obtém tamanho usando stat em vez de read_bytes
+        snapshot_stat = snapshot_path.stat()
+        snapshot_size = snapshot_stat.st_size
 
         # Verifica se o tamanho permanece inalterado
-        if len(snapshot_data) != original_size_bytes_before:
+        if snapshot_size != original_size_bytes_before:
             raise ValueError("Integridade comprometida: tamanho do arquivo alterado durante a cópia.")
 
         # Verifica se o mtime (tempo de modificação) permanece inalterado
@@ -137,14 +133,14 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         if mtime_ns_after != original_mtime_ns_before:
             raise ValueError("Integridade comprometida: tempo de modificação do arquivo alterado.")
 
-        # Calcula hash da cópia
+        # Calcula hash da cópia (em blocos para arquivos grandes)
         snapshot_hash = _calculate_sha256_blocks(snapshot_path)
 
         # Verifica integridade dos hashes (original antes e snapshot depois devem ser idênticos)
         if original_hash != snapshot_hash:
             raise ValueError("Integridade comprometida: hash do arquivo alterado durante a cópia.")
 
-        size_bytes = len(snapshot_data)
+        size_bytes = snapshot_size
 
         yield SnapshotResult(
             original_path=str(path.resolve()),
@@ -155,35 +151,37 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         )
 
         # APÓS YIELD: recalcula hash do original para garantir que não foi alterado durante o uso
-        current_original_data = path.read_bytes()
-        if len(current_original_data) != original_size_bytes_before:
-            raise ValueError("Integridade comprometida: tamanho do arquivo original foi alterado após snapshot.")
+        try:
+            stat_after_yield = path.stat()
+            size_after_yield = stat_after_yield.st_size
+            mtime_ns_after_yield = stat_after_yield.st_mtime_ns
 
-        current_original_hash = _calculate_sha256_blocks(path)
-        if current_original_hash != original_hash:
-            raise ValueError("Integridade comprometida: conteúdo do arquivo original foi alterado após snapshot.")
+            if size_after_yield != original_size_bytes_before:
+                raise ValueError("Integridade comprometida: tamanho do arquivo original foi alterado após snapshot.")
 
-    except FileNotFoundError:
-        # Se o arquivo sumiu durante a cópia ou verificação, lança FileNotFoundError
-        raise FileNotFoundError(f"Arquivo desapareceu durante a operação: {path}")
-    except Exception:
-        # Limpa pasta temporária em caso de erro (sem silenciar falhas)
+            current_original_hash = _calculate_sha256_blocks(path)
+            if current_original_hash != original_hash:
+                raise ValueError("Integridade comprometida: conteúdo do arquivo original foi alterado após snapshot.")
+
+            # Detecta alteração apenas por mtime_ns, mesmo quando conteúdo e tamanho não mudaram
+            if mtime_ns_after_yield != original_mtime_ns_before:
+                raise ValueError("Integridade comprometida: timestamp de modificação do arquivo original foi alterado após snapshot.")
+
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Arquivo desapareceu durante a operação: {path}")
+
+    except Exception as e:
+        # Limpa pasta temporária em caso de erro (preservando exceção original)
         try:
             if temp_dir is not None and Path(temp_dir).exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
-        except Exception as e:
-            # Se não houver exceção ativa, reporta a falha de limpeza
-            raise RuntimeError(f"Erro ao limpar diretório temporário {temp_dir}: {e}") from e
-        raise
-
-    finally:
-        # Sempre remove pasta temporária ao sair do contexto (após yield)
-        if temp_dir is not None and Path(temp_dir).exists():
-            try:
+                # Não usa ignore_errors=True para detectar falha real na limpeza
                 shutil.rmtree(temp_dir, ignore_errors=False)
-            except FileNotFoundError:
-                pass  # Já foi removido por outra exceção
-            except PermissionError:
-                raise RuntimeError(f"Erro ao remover diretório temporário {temp_dir}: permissão negada") from None
-            except OSError as e:
+        except FileNotFoundError:
+            pass  # Já foi removido ou não existe mais
+        except PermissionError:
+            raise RuntimeError(f"Erro ao limpar diretório temporário {temp_dir}: permissão negada") from e
+        except OSError as e:
+            # Se já há uma exceção ativa, adiciona a falha de limpeza como causa
+            if "Operation cancelled" not in str(e):
                 raise RuntimeError(f"Erro ao remover diretório temporário {temp_dir}: {e}") from e
+        raise

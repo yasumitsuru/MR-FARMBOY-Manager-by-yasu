@@ -151,7 +151,36 @@ No structured formatting here."""
 
         assert result.inspection_success is True
         assert result.is_textual is False  # ZIP é binário
+        assert result.detected_format == DetectedFormat.ZIP
         assert result.total_size_bytes == len(zip_data)
+
+    def test_zip_span_header(self, tmp_path: Path) -> None:
+        """Verifica detecção de ZIP pelo span header PK\x07\x08."""
+        zip_file = tmp_path / "span.zip"
+        # Span header
+        span_header = b'PK\x07\x08'
+        zip_data = span_header
+
+        zip_file.write_bytes(zip_data)
+
+        result = inspect_save(zip_file)
+
+        assert result.inspection_success is True
+        assert result.is_textual is False
+        assert result.detected_format == DetectedFormat.ZIP
+
+    def test_permission_error_handled(self, tmp_path: Path) -> None:
+        """Verifica que PermissionError é tratado corretamente ao tentar ler arquivo sem permissão."""
+        from unittest.mock import patch
+
+        original_file = tmp_path / 'protected.bin'
+        original_data = b'test data'
+        original_file.write_bytes(original_data)
+
+        with patch.object(Path, 'read_bytes', side_effect=PermissionError("Access denied")):
+            result = inspect_save(original_file)
+            assert result.readable_file is False
+            assert result.inspection_success is False
 
     def test_zip_empty(self, tmp_path: Path) -> None:
         """Verifica detecção de ZIP vazio/end-of-central-directory."""

@@ -78,9 +78,10 @@ def _is_textual_content(content: str) -> bool:
 
 
 def _is_valid_json(data: bytes) -> bool:
-    """Tenta validar JSON decodificado."""
+    """Tenta validar JSON decodificado usando utf-8-sig para suportar BOM."""
     try:
-        text_data = data.decode('utf-8')
+        # Tenta primeiro com utf-8-sig para suportar BOM UTF-8
+        text_data = data.decode('utf-8-sig')
         json.loads(text_data)
         return True
     except (UnicodeDecodeError, json.JSONDecodeError):
