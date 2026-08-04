@@ -78,9 +78,40 @@ Este é um projeto independente feito por fãs para fins de análise pessoal.
 
 🚧 **Em desenvolvimento**
 
-A instalação ainda não foi documentada. Em breve, instruções completas serão disponibilizadas nesta seção.
+## Executando o projeto durante o desenvolvimento
 
-Em desenvolvimento.
+### Pré-requisitos
+- Python 3.12 ou superior
+
+### Passos para execução
+
+1. **Criar ou ativar o ambiente virtual**:
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+
+2. **Instalar o projeto com dependências de desenvolvimento**:
+   ```bash
+   pip install --upgrade pip
+   pip install -e ".[dev]"
+   ```
+
+3. **Executar a aplicação**:
+   ```bash
+   python -m mr_farmboy_manager
+   ```
+
+4. **Executar os testes**:
+   ```bash
+   pytest tests/ -v
+   ```
+
+---
+
+## Instalação
+
+🚧 **Em desenvolvimento**
 
 As instruções de instalação e os requisitos definitivos serão documentados quando existir uma versão executável do projeto.
 
