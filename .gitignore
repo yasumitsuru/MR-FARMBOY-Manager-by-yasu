@@ -1,0 +1,97 @@
+# ============================================
+# MR FARMBOY Manager by yasu - .gitignore
+# ============================================
+# Arquivos gerados durante o desenvolvimento, dados do projeto e 
+# recursos que NÃO podem ser enviados ao repositório.
+#
+# AVISO IMPORTANTE:
+# - Saves de jogos não devem ser enviados ao GitHub por motivos de segurança;
+# - Bancos de dados locais são sensíveis e contêm dados pessoais do usuário;
+# - Recursos extraídos do jogo protegidos por direitos autorais não podem ser distribuídos.
+
+# ============================================
+# Python - Cache e compilação
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ============================================
+# Ambientes virtuais e configurações
+# ============================================
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+.env
+.pytest_cache/
+.coverage
+.htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================
+# Build e distribuição
+# ============================================
+build/
+dist/
+*.egg-info/
+*.spec
+*.egg
+
+# ============================================
+# IDEs e Editores
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================
+# Logs e bases de dados
+# ============================================
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# Pasta temporária do projeto
+# ============================================
+temp/
+tmp/
+
+# ============================================
+# Dados locais sensíveis (NÃO enviar ao GitHub!)
+# ============================================
+local_data/
+
+# ============================================
+# Saves do jogo (NÃO enviar ao GitHub!)
+# Atenção: Envoyer saves pode expor dados pessoais e comprometer contas.
+# ============================================
+save_samples/private/
+*.save
+*saves/
+
+# ============================================
+# Recursos extraídos do jogo (NÃO enviar ao GitHub!)
+# Atenção: Distribuir assets protegidos por direitos autorais é ilegal.
+# Futuramente, o programa poderá localizar recursos na instalação do usuário.
+# ============================================
+game_assets/
+extracted_assets/
+assets_extracted/
+
+# ============================================
+# Outras configurações de segurança
+# ============================================
+*.pem
+*.key
+credentials.json
+config.ini
+secrets.env
