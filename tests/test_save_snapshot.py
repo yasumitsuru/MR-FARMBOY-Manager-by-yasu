@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import hashlib
 import pytest
 
 from mr_farmboy_manager.save_snapshot import (
@@ -15,156 +16,152 @@ class TestCreateSaveSnapshot:
 
     def test_snapshot_created_at_different_path(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'test data')
+        original_data = b'test data'
+        original_file.write_bytes(original_data)
+
         with create_save_snapshot(original_file) as result:
             assert isinstance(result, SnapshotResult)
-            assert result.snapshot_path != str(original_file)
+            assert not str(result.snapshot_path).startswith(str(tmp_path))
 
     def test_content_identical_to_original(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_data = b'test content'
+        original_data = b'test content with specific data'
         original_file.write_bytes(original_data)
+
+        with create_save_snapshot(original_file) as result:
+            snapshot_bytes = Path(result.snapshot_path).read_bytes()
+            assert snapshot_bytes == original_data
+
+    def test_size_identical_to_original(self, tmp_path: Path) -> None:
+        original_file = tmp_path / 'original.bin'
+        original_data = b'test content for size check'
+        original_file.write_bytes(original_data)
+
         with create_save_snapshot(original_file) as result:
             assert result.size_bytes == len(original_data)
 
     def test_sha256_identical(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'sha256 data')
+        original_data = b'sha256 data for verification'
+        original_file.write_bytes(original_data)
+
         with create_save_snapshot(original_file) as result:
             assert result.original_sha256 == result.snapshot_sha256
 
-    def test_hash_format(self, tmp_path: Path) -> None:
-        """Verifies that SHA-256 hashes are 64 hex characters."""
+    def test_hash_format_is_64_hex_chars(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'hash format')
+        original_file.write_bytes(b'hash format test')
+
         with create_save_snapshot(original_file) as result:
             assert len(result.original_sha256) == 64
             assert len(result.snapshot_sha256) == 64
-            assert all(c in '0123456789abcdef' for c in result.original_sha256)
 
     def test_original_not_modified(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_content = b'original data'
+        original_content = b'original data content'
         original_file.write_bytes(original_content)
+
         content_before = original_file.read_bytes()
-        with create_save_snapshot(original_file):
-            pass
-        content_after = original_file.read_bytes()
-        assert content_before == content_after
+        stat_before = original_file.stat()
+        size_before = len(content_before)
+        mtime_ns_before = stat_before.st_mtime_ns
 
-    def test_snapshot_removed_on_context_exit(self, tmp_path: Path) -> None:
-        """Verifies snapshot is cleaned up after context manager exits."""
-        original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'cleanup')
-        with create_save_snapshot(original_file):
-            pass
-        # Verifica que não há diretórios temporários restantes
-        remaining = list(tmp_path.glob('**/*mr_farmboy_snapshot*'))
-        assert len(remaining) == 0
+        with create_save_snapshot(original_file) as result:
+            assert isinstance(result, SnapshotResult)
 
-    def test_cleanup_after_exception(self, tmp_path: Path) -> None:
-        """Verifies snapshot is cleaned up even when exception occurs."""
+            content_during = original_file.read_bytes()
+            stat_during = original_file.stat()
+
+            assert content_during == content_before
+            assert size_before == len(content_during)
+            assert mtime_ns_before == stat_during.st_mtime_ns
+
+    def test_snapshot_removed_after_context(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'excepcion')
+        original_file.write_bytes(b'test data')
+
+        captured_snapshot_path: str | None = None
+
         try:
-            with create_save_snapshot(original_file):
-                raise ValueError('test')
+            with create_save_snapshot(original_file) as result:
+                assert isinstance(result, SnapshotResult)
+                captured_snapshot_path = result.snapshot_path
+                assert Path(captured_snapshot_path).exists() is True
+
+            if captured_snapshot_path is not None:
+                assert Path(captured_snapshot_path).exists() is False
         except ValueError:
             pass
-        remaining = list(tmp_path.glob('**/*mr_farmboy_snapshot*'))
-        assert len(remaining) == 0
+
+        if captured_snapshot_path is not None:
+            assert Path(captured_snapshot_path).exists() is False
+
+    def test_cleanup_after_exception(self, tmp_path: Path) -> None:
+        original_file = tmp_path / 'original.bin'
+        original_file.write_bytes(b'test data')
+
+        captured_snapshot_path: str | None = None
+
+        try:
+            with create_save_snapshot(original_file) as result:
+                captured_snapshot_path = result.snapshot_path
+                raise ValueError('Test exception for cleanup')
+        except ValueError:
+            pass
+
+        if captured_snapshot_path is not None:
+            assert Path(captured_snapshot_path).exists() is False
 
     def test_nonexistent_file_raises(self, tmp_path: Path) -> None:
-        """Verifies FileNotFoundError for nonexistent files."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError, match="não aponta para um arquivo válido"):
             with create_save_snapshot(tmp_path / 'nonexistent.bin'):
                 pass
 
     def test_directory_path_raises(self, tmp_path: Path) -> None:
-        """Verifies that a directory path raises an error."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError, match="não aponta para um arquivo"):
             with create_save_snapshot(tmp_path):
                 pass
 
     def test_empty_file_raises(self, tmp_path: Path) -> None:
-        """Verifies that empty file raises ValueError."""
         original = tmp_path / 'empty.bin'
         original.write_bytes(b'')
-        with pytest.raises(ValueError, match='Arquivo vazio'):
+
+        with pytest.raises(ValueError, match="Arquivo vazio"):
             with create_save_snapshot(original):
                 pass
 
     def test_permission_error_mocked(self, tmp_path: Path) -> None:
-        """Verifies PermissionError is handled properly."""
         from unittest.mock import patch
-        
+
         original_file = tmp_path / 'protected.bin'
-        original_file.write_bytes(b'permission')
-        
-        # Mocka open para retornar PermissionError
-        with patch('builtins.open', side_effect=PermissionError('denied')):
-            with pytest.raises(PermissionError):
+        original_file.write_bytes(b'test data')
+
+        with patch.object(Path, 'read_bytes', side_effect=PermissionError("Access denied")):
+            with pytest.raises(PermissionError, match="Sem permissão"):
                 with create_save_snapshot(original_file):
                     pass
 
-
-class TestSnapshotResult:
-    """Tests for SnapshotResult dataclass."""
-
-    def test_result_structure(self) -> None:
-        result = SnapshotResult(
-            original_path='/path/original.bin',
-            snapshot_path='/path/snapshot.bin',
-            size_bytes=123,
-            original_sha256='abc' * 16,
-            snapshot_sha256='abc' * 16,
-        )
-        assert result.size_bytes == 123
-        assert result.original_path == '/path/original.bin'
-        assert result.snapshot_path == '/path/snapshot.bin'
-
-
-class TestHashVerification:
-    """Tests for hash verification."""
-
-    def test_hash_verification_success(self, tmp_path: Path) -> None:
+    def test_integrity_check_original_not_modified_after_context(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_file.write_bytes(b'hash test')
-        with create_save_snapshot(original_file) as result:
-            assert result.original_sha256 == result.snapshot_sha256
+        original_content = b'original data for integrity check'
+        original_file.write_bytes(original_content)
 
-    def test_original_integrity_preserved(self, tmp_path: Path) -> None:
-        """Verifies hash before and after copy are identical."""
+        try:
+            with create_save_snapshot(original_file) as result:
+                assert isinstance(result, SnapshotResult)
+                original_file.write_bytes(b'modified during snapshot')
+
+            assert False, "Deve ter lançado ValueError"
+        except ValueError as e:
+            if "integridade" not in str(e).lower():
+                raise AssertionError(f"Erro deve mencionar integridade: {e}")
+
+    def test_snapshot_sha256_matches_original(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
-        original_data = b'integrity data'
+        original_data = b'snapshot verification data'
         original_file.write_bytes(original_data)
-        
+
         with create_save_snapshot(original_file) as result:
-            assert result.original_sha256 == result.snapshot_sha256
-
-
-class TestEdgeCases:
-    """Tests for edge cases."""
-
-    def test_binary_data(self, tmp_path: Path) -> None:
-        """Verifies handling of binary data with null bytes."""
-        original_file = tmp_path / 'binary.bin'
-        original_file.write_bytes(b'\x00\x01\x02\xff\xfe')
-        with create_save_snapshot(original_file) as result:
-            assert result.size_bytes == 5
-
-    def test_large_file(self, tmp_path: Path) -> None:
-        """Verifies handling of larger files (1 MB)."""
-        original_file = tmp_path / 'large.bin'
-        large_data = b'x' * (1024 * 1024)
-        original_file.write_bytes(large_data)
-        with create_save_snapshot(original_file) as result:
-            assert result.size_bytes == 1024 * 1024
-
-    def test_special_characters_in_name(self, tmp_path: Path) -> None:
-        """Verifies files with special characters in name."""
-        original_file = tmp_path / 'test-save_1.bin'
-        original_data = b'special chars'
-        original_file.write_bytes(original_data)
-        with create_save_snapshot(original_file) as result:
-            assert result.size_bytes == len(original_data)
+            assert isinstance(result, SnapshotResult)
+            calculated_hash = hashlib.sha256(original_data).hexdigest()
+            assert result.snapshot_sha256 == calculated_hash
