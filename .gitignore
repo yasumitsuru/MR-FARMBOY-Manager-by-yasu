@@ -6,7 +6,7 @@
 #
 # AVISO IMPORTANTE:
 # - Saves de jogos não devem ser enviados ao GitHub por motivos de segurança;
-# - Bancos de dados locais são sensíveis e contêm dados pessoais do usuário;
+# - Bancos de dados locais podem conter histórico e configurações do usuário e não devem ser versionados.
 # - Recursos extraídos do jogo protegidos por direitos autorais não podem ser distribuídos.
 
 # ============================================
@@ -72,7 +72,7 @@ local_data/
 
 # ============================================
 # Saves do jogo (NÃO enviar ao GitHub!)
-# Atenção: Envoyer saves pode expor dados pessoais e comprometer contas.
+# Atenção: Arquivos de save podem conter progresso e dados locais do jogador e não devem ser enviados ao repositório público.
 # ============================================
 save_samples/private/
 *.save
@@ -80,7 +80,7 @@ save_samples/private/
 
 # ============================================
 # Recursos extraídos do jogo (NÃO enviar ao GitHub!)
-# Atenção: Distribuir assets protegidos por direitos autorais é ilegal.
+# Não inclua recursos extraídos do jogo sem autorização ou licença aplicável.
 # Futuramente, o programa poderá localizar recursos na instalação do usuário.
 # ============================================
 game_assets/

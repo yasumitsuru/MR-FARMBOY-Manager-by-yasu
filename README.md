@@ -38,9 +38,9 @@ O MR FARMBOY Manager é um painel desktop projetado para análise financeira e g
 
 > ⚠️ **IMPORTANTE**: A integridade e segurança dos seus saves é fundamental.
 
-- Este programa opera em **modo somente leitura** sobre o save;
-- O **save original nunca será modificado**;
-- A análise será feita usando uma **cópia temporária** do arquivo de save;
+- O aplicativo será projetado para operar em **modo somente leitura** sobre o save;
+- A implementação deverá garantir que o **save original nunca seja modificado**;
+- A análise deverá ser realizada sobre uma **cópia temporária** do arquivo de save;
 - **Saves não devem ser enviados ao GitHub** por motivos de segurança e privacidade.
 
 ---
@@ -59,7 +59,7 @@ O MR FARMBOY Manager é um painel desktop projetado para análise financeira e g
 
 [MR FARMBOY](https://store.steampowered.com/app/2795090/MR_FARMBOY/) na Steam
 
-Um jogo de gestão de fazenda desenvolvido pela YASU-Soft.
+Um jogo de gestão de fazenda desenvolvido e publicado por mrdboy.
 
 ---
 
@@ -80,9 +80,9 @@ Este é um projeto independente feito por fãs para fins de análise pessoal.
 
 A instalação ainda não foi documentada. Em breve, instruções completas serão disponibilizadas nesta seção.
 
-Requisitos mínimos:
-- Python 3.12 ou superior
-- PySide6 instalado (`pip install PySide6`)
+Em desenvolvimento.
+
+As instruções de instalação e os requisitos definitivos serão documentados quando existir uma versão executável do projeto.
 
 ---
 
