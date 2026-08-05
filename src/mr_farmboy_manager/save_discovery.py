@@ -181,16 +181,31 @@ def _validate_sqlite_structure(snapshot_path: str | Path) -> int | None:
     """Valida e conta tabelas SQLite com modo somente leitura.
 
     Não expõe nomes de tabelas nem executa consultas sobre dados do jogador.
+    Fecha cursor e conexão garantidamente (try/finally) para não bloquear
+    o arquivo do snapshot no Windows, permitindo a limpeza posterior.
     """
+    conn = None
+    cursor = None
     try:
         conn = sqlite3.connect(f'file:{snapshot_path}?mode=ro', uri=True, timeout=1.0)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         table_count = len(cursor.fetchall())
-        conn.close()
         return table_count
     except sqlite3.Error as e:
         raise ValueError(f"Arquivo SQLite inválido: {e}")
+    finally:
+        # Fechamento garantido mesmo em caso de erro de validação
+        if cursor is not None:
+            try:
+                cursor.close()
+            except sqlite3.Error:
+                pass
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
 
 
 def _validate_json_structure(data: bytes) -> tuple[str | None, bool]:
@@ -378,10 +393,7 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 success=False, detected_format=SavedFormat.UNKNOWN,
                 error_message="Erro ao processar arquivo"
             )
-        finally:
-            # O contexto manager de create_save_snapshot cuida da limpeza
-            # Não realizamos limpeza manual redundante aqui
-            pass
+
 
 
 def format_sanitized_report(result: SaveDiscoveryResult) -> str:
