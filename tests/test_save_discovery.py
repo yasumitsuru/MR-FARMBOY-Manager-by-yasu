@@ -2,6 +2,7 @@
 
 import gzip
 import json
+import socket
 import sys
 import hashlib
 import sqlite3
@@ -120,11 +121,10 @@ class TestZipInspection:
         """Teste que ZIP com mais de 1.000 entradas é rejeitado/limitado."""
         zip_path = tmp_path / "large.zip"
 
-        # Criar ZIP com limite próximo do máximo (usando metadados sintéticos)
         with zipfile.ZipFile(zip_path, 'w') as zf:
-            for i in range(1050):  # Um pouco acima do limite
+            for i in range(1050):
                 info = zipfile.ZipInfo(f"data_{i}.json")
-                info.compress_size = 100  # Metadado sintético
+                info.compress_size = 100
                 zf.writestr(info, b'{}')
 
         result = discover_save_structure(str(zip_path))
@@ -195,7 +195,6 @@ class TestSanitization:
         json_path.write_text(json.dumps(json_data))
         result = discover_save_structure(str(json_path))
         report = format_sanitized_report(result)
-        # Verifica que não há caminhos Windows (dois backslashes seguidos após dois-pontos)
         assert "\\" not in report or ":" not in report, "Caminho potencialmente vazado!"
 
     def test_no_original_filename_in_report(self, tmp_path):
@@ -240,7 +239,6 @@ class TestBinaryUnknownInspection:
         assert result.success is True
 
         report = format_sanitized_report(result)
-        # O relatório deve ter algum conteúdo (não vazio)
         assert len(report) > 0
 
 
@@ -250,19 +248,15 @@ class TestPermissionError:
     def test_permission_error_handling(self, tmp_path):
         """Teste que PermissionError durante leitura do snapshot é tratado com mensagem sanitizada."""
         import json
-        from unittest.mock import patch, MagicMock
 
-        # Cria um arquivo JSON de teste
         json_content = '{"player": "test", "level": 5}'
         json_path = tmp_path / "save.json"
         json_path.write_text(json_content)
 
-        # Mock do create_save_snapshot que retorna um caminho de snapshot
         mock_info = MagicMock()
         mock_info.snapshot_path = str(tmp_path / "snapshot")
 
         with patch('mr_farmboy_manager.save_discovery.create_save_snapshot', return_value=mock_info):
-            # Mock de open para simular PermissionError ao ler o snapshot
             def mock_open(*args, **kwargs):
                 f = MagicMock()
                 f.__enter__ = MagicMock(side_effect=PermissionError("Access denied to snapshot"))
@@ -271,9 +265,7 @@ class TestPermissionError:
 
             with patch('builtins.open', side_effect=mock_open):
                 result = discover_save_structure(str(json_path))
-                # Deve retornar erro com mensagem sanitizada
                 assert not result.success or result.error_message is not None
-                # A mensagem de erro não deve conter o caminho absoluto do snapshot
                 error_msg = result.error_message or ""
                 assert "snapshot" not in error_msg.lower() or "access denied" in error_msg.lower()
 
@@ -318,28 +310,39 @@ class TestCLI:
 
             assert result.returncode != 0
 
-    def test_cli_rejects_output_inside_repository(self):
+    def test_cli_rejects_output_inside_repository(self, tmp_path):
         """Teste que CLI rejeita caminho de saída dentro do repositório."""
-        mock_warning_result = type('obj', (object,), {
-            'returncode': 1,
-            'stdout': '',
-            'stderr': 'Aviso: O diretório de saída deve estar fora do repositório Git.'
-        })()
+        import json
+        from pathlib import Path
 
-        with patch('subprocess.run', return_value=mock_warning_result):
-            result = subprocess_run(
-                ["python", "tools/inspect_local_save.py", "./test.json", "--output", "./output.txt"],
-                capture_output=True,
-                text=True
-            )
+        input_file = tmp_path / "test.json"
+        input_file.write_text(json.dumps({"test": "value"}))
 
-            assert result.returncode != 0
+        cli_script = Path(__file__).parent.parent / 'tools' / 'inspect_local_save.py'
+
+        repo_root = Path(__file__).resolve().parent.parent
+        blocked_test_report = repo_root / "blocked_test_report.txt"
+
+        result = subprocess_run(
+            [sys.executable, str(cli_script), str(input_file), "--output", str(blocked_test_report)],
+            capture_output=True,
+            text=True
+        )
+
+        assert result.returncode != 0, f"Deveria rejeitar saída dentro do repo. Retorno: {result.returncode}"
+        assert not blocked_test_report.exists(), "Arquivo de saída não deve ser criado quando dentro do repositório"
+
+        full_output = result.stdout + result.stderr
+        for path_str in [str(blocked_test_report), str(repo_root)]:
+            assert path_str not in full_output, f"Caminho '{path_str}' vazado na saída!"
+
+        if blocked_test_report.exists():
+            blocked_test_report.unlink()
 
 
 class TestNoNetworkAccess:
-    def test_no_network_access_during_discovery(self):
+    def test_no_network_access_during_discovery(self, tmp_path):
         """Teste que nenhuma chamada de rede é realizada durante descoberta."""
-        # O módulo não faz chamadas de rede para JSON/XML simples
         result = discover_save_structure("./test.json")
 
         assert result.success is True or "Caminho inválido" in (result.error_message or "")
@@ -402,7 +405,6 @@ class TestOriginalFilePreservation:
         json_path = tmp_path / "save.json"
         json_path.write_text(content)
 
-        # Obter mtime antes com precisão
         original_mtime_ns = json_path.stat().st_mtime_ns
 
         result = discover_save_structure(str(json_path))
@@ -410,7 +412,6 @@ class TestOriginalFilePreservation:
         assert result.success is True
 
         new_mtime_ns = json_path.stat().st_mtime_ns
-        # Verifica igualdade exata - mtime não muda com apenas leitura do arquivo
         assert new_mtime_ns == original_mtime_ns, \
             f"mtime_ns deve ser idêntico: {original_mtime_ns} -> {new_mtime_ns}"
 
@@ -419,12 +420,10 @@ class TestOriginalFilePreservation:
         json_path = tmp_path / "save.json"
         json_path.write_text(json.dumps({"test": "value"}))
 
-        # Verificar que o original existe antes
         assert json_path.exists()
 
         result = discover_save_structure(str(json_path))
 
-        # O arquivo original deve permanecer
         assert json_path.exists()
 
 
@@ -433,7 +432,6 @@ class TestCLIRealExecution:
 
     def test_cli_produces_sanitized_report(self, tmp_path):
         """Teste que CLI produz relatório sanitizado sem dados sensíveis."""
-        # Criar arquivo com dados sintéticos específicos
         sensitive_data = {
             "farmName": "Fazenda do Fazendeiro Mestre",
             "location": "São Paulo - SP",
@@ -452,13 +450,11 @@ class TestCLIRealExecution:
             text=True
         )
 
-        # Deve retornar sucesso
         assert result.returncode == 0
 
         report = result.stdout
         assert "Status: SUCESSO" in report or "Status: FALHA" not in report.lower()
 
-        # Dados sensíveis não devem aparecer no relatório
         sensitive_values = [
             "Fazenda do Fazendeiro Mestre",
             "São Paulo - SP",
@@ -472,4 +468,85 @@ class TestCLIRealExecution:
             assert value not in report, f"Dado sensível '{value}' vazado no relatório!"
 
 
-# Testes críticos são executados individualmente acima
+class TestImportsFromRoot:
+    """Testes de importação pela raiz do pacote."""
+
+    def test_import_from_root(self):
+        """Teste que importações pela raiz do pacote funcionam corretamente."""
+        from mr_farmboy_manager import SaveDiscoveryResult
+        assert SaveDiscoveryResult is not None
+
+        from mr_farmboy_manager import SaveDiscoverySavedFormat
+        assert SaveDiscoverySavedFormat is not None
+        assert isinstance(SaveDiscoverySavedFormat, type)
+
+        from mr_farmboy_manager import discover_save_structure
+        assert callable(discover_save_structure)
+
+        from mr_farmboy_manager import format_sanitized_report
+        assert callable(format_sanitized_report)
+
+
+class TestZipLimits:
+    """Testes de limites do ZIP usando ZipInfo reais."""
+
+    def test_zip_exceeds_100mb_decompressed_limit(self, tmp_path):
+        """Teste que 11 entradas de exatamente 10 MB ultrapassam só o limite agregado de 100 MB."""
+        from mr_farmboy_manager.save_discovery import (
+            MAX_ENTRY_SIZE_BYTES,
+            discover_save_structure,
+        )
+
+        # ZIP real, mínimo e válido
+        zip_path = tmp_path / "large_zip.zip"
+        with zipfile.ZipFile(str(zip_path), 'w') as zf:
+            zf.writestr("base.dat", b'{}')
+
+        # 11 entradas reais de exatamente MAX_ENTRY_SIZE_BYTES (10 MB) cada:
+        # 11 x 10 MB = 110 MB, ultrapassando apenas o limite agregado de 100 MB,
+        # sem que nenhuma entrada individual ultrapasse o limite de 10 MB.
+        info_list = []
+        for i in range(11):
+            info = zipfile.ZipInfo(f"entry_{i}.dat")
+            info.file_size = MAX_ENTRY_SIZE_BYTES
+            info.compress_size = 100
+            info.flag_bits = 0
+            info_list.append(info)
+
+        with patch('mr_farmboy_manager.save_discovery.zipfile.ZipFile.infolist', return_value=info_list):
+            result = discover_save_structure(str(zip_path))
+
+        assert result.success is False, "ZIP deve ser rejeitado por exceder limite de 100 MB"
+        assert result.error_message is not None
+        assert str(tmp_path) not in (result.error_message or "")
+        # A implementação diferencia as mensagens: a rejeição deve ser pelo total,
+        # não pelo limite individual de 10 MB (que não foi ultrapassado).
+        assert "100 MB" in (result.error_message or ""), \
+            "Rejeição deve ser pelo limite total de 100 MB, não pelo individual de 10 MB"
+
+    def test_zip_single_entry_exceeds_10mb_limit(self, tmp_path):
+        """Teste que ZIP com entrada única acima de 10 MB é rejeitado pelo limite individual."""
+        from mr_farmboy_manager.save_discovery import (
+            MAX_ENTRY_SIZE_BYTES,
+            discover_save_structure,
+        )
+
+        # ZIP real, mínimo e válido
+        zip_path = tmp_path / "large_entry.zip"
+        with zipfile.ZipFile(str(zip_path), 'w') as zf:
+            zf.writestr("base.dat", b'{}')
+
+        # Entrada única real com 10 MB + 1 byte, acima do limite individual
+        info = zipfile.ZipInfo("entry_0.dat")
+        info.file_size = MAX_ENTRY_SIZE_BYTES + 1
+        info.compress_size = 100
+        info.flag_bits = 0
+
+        with patch('mr_farmboy_manager.save_discovery.zipfile.ZipFile.infolist', return_value=[info]):
+            result = discover_save_structure(str(zip_path))
+
+        assert result.success is False, "ZIP deve ser rejeitado por entrada acima de 10 MB"
+        assert result.error_message is not None
+        assert str(tmp_path) not in (result.error_message or "")
+        # Confirma que a rejeição veio do limite individual (10 MB)
+        assert "10 MB" in (result.error_message or "")

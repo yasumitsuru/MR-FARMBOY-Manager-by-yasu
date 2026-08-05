@@ -13,6 +13,7 @@ from mr_farmboy_manager.save_loader import (
 )
 from mr_farmboy_manager.save_discovery import (
     SaveDiscoveryResult,
+    SavedFormat as SaveDiscoverySavedFormat,
     discover_save_structure,
     format_sanitized_report,
 )

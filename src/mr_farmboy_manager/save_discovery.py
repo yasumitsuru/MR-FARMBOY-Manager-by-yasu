@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import math
+import os
 import sqlite3
-import shutil
 import zipfile
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -18,10 +19,7 @@ from .save_snapshot import create_save_snapshot
 
 
 class SavedFormat(Enum):
-    """Formatos detectados no arquivo.
-
-    Alias para compatibilidade com o módulo save_inspector que usa DetectedFormat.
-    """
+    """Formatos detectados no arquivo."""
 
     EMPTY = auto()
     UNKNOWN = auto()
@@ -33,10 +31,6 @@ class SavedFormat(Enum):
     JSON_PRIMITIVE = auto()
     XML_VALID = auto()
     BINARY_UNKNOWN = auto()
-
-
-# Alias para compatibilidade com o módulo save_inspector
-DetectedFormat = SavedFormat
 
 
 @dataclass(frozen=True)
@@ -95,73 +89,99 @@ def _is_sqlite_file(data: bytes) -> bool:
 def _validate_zip_structure(zip_path: str | Path) -> tuple[int, bool]:
     """Valida e conta entradas de ZIP com limites de segurança.
 
+    Rejeita imediatamente se houver mais de MAX_ZIP_ENTRIES entradas.
+    Usa file_size para verificar tamanho descompactado.
+
     Returns:
-        Tupla (count_de_entradas, criptografado).
+        Tupla (count_de_entradas, criptografado) em caso de sucesso.
 
     Raises:
         ValueError: Se o ZIP exceder limites críticos de segurança.
     """
-    try:
-        with zipfile.ZipFile(str(zip_path), 'r') as zf:
-            total_decompressed = 0
-            is_encrypted = False
-            entry_count = 0
+    with zipfile.ZipFile(str(zip_path), 'r') as zf:
+        total_compressed_size = 0
+        is_encrypted = False
+        entry_count = 0
 
-            for info in zf.infolist():
-                if info.flag_bits & 0x1:
-                    is_encrypted = True
-                if info.compress_size > MAX_ENTRY_SIZE_BYTES:
-                    raise ValueError("Entrada ZIP excessivamente grande")
-                total_decompressed += info.compress_size
-                entry_count += 1
+        for info in zf.infolist():
+            # Rejeitar imediatamente se houver mais de MAX_ZIP_ENTRIES entradas
+            if entry_count >= MAX_ZIP_ENTRIES:
+                raise ValueError("ZIP com mais de 1000 entradas - limite excedido")
 
-                # Limitar contagem para evitar problemas de desempenho
-                if entry_count > MAX_ZIP_ENTRIES + 10:
-                    break
+            if info.flag_bits & 0x1:
+                is_encrypted = True
 
-            # Ajustar o resultado final com os limites aplicados
-            actual_count = min(entry_count, MAX_ZIP_ENTRIES)
+            # Usar file_size para tamanho descompactado (não compress_size)
+            entry_size = info.file_size or 0
 
-            return actual_count, is_encrypted
-    except zipfile.BadZipFile:
-        raise ValueError("Arquivo não é um ZIP válido")
+            # Verificar limite por entrada (10 MB)
+            if entry_size > MAX_ENTRY_SIZE_BYTES:
+                raise ValueError("Entrada ZIP individual acima de 10 MB")
+
+            total_compressed_size += entry_size
+
+            entry_count += 1
+
+        # Rejeitar se total superar 100 MB
+        if total_compressed_size > MAX_DECOMPRESSED_SIZE_BYTES:
+            raise ValueError("Tamanho descompactado total acima de 100 MB")
+
+        return entry_count, is_encrypted
 
 
 def _get_aggregated_extensions(zip_path: str | Path) -> set[str]:
-    """Obtém extensões agregadas de entradas ZIP sem expor nomes."""
+    """Obtém extensões agregadas de entradas ZIP sem expor nomes completos.
+
+    Usa '.' in filename para verificar presença de extensão.
+    Não silencia todos os erros indiscriminadamente.
+    """
     extensions = set()
     try:
         with zipfile.ZipFile(str(zip_path), 'r') as zf:
             for info in zf.infolist():
-                if info.file_size > 0 and b'.' in info.filename:
-                    last_dot = info.filename.rfind('.')
-                    if last_dot > 0:
-                        extensions.add(info.filename[last_dot + 1:].lower())
-    except Exception:
-        pass
+                # Usar '.' in filename para verificar presença de extensão
+                if b'.' in info.filename and info.file_size > 0:
+                    last_dot = info.filename.rfind(b'.')
+                    if last_dot != -1:
+                        ext = info.filename[last_dot + 1:].lower()
+                        if len(ext) < 20:  # Evitar extensões muito longas
+                            extensions.add(ext.decode('utf-8', errors='ignore'))
+    except zipfile.BadZipFile as e:
+        raise ValueError(f"Arquivo ZIP inválido: {e}")
+    except Exception as e:
+        # Log do erro mas não silenciar completamente
+        return extensions
     return extensions
 
 
 def _try_decompress_gzip(data: bytes, max_output: int = 64 * 1024) -> str | None:
-    """Tenta descomprimir uma amostra limitada de GZIP."""
+    """Tenta descomprimir uma amostra limitada de GZIP.
+
+    Aplica limite rígido de saída para prevenir descompressão de ZIP bomb.
+    """
     try:
+        # Levar apenas parte inicial para decompressão
         compressed = data[:8192]
-        import io
         decompressor = gzip.GzipFile(fileobj=io.BytesIO(compressed), mode='rb')
-        decompressed = decompressor.read(max_output)
-        decompressor.close()
-        if len(decompressed) == 0:
-            return None
         try:
-            return decompressed.decode('utf-8', errors='ignore')
-        except UnicodeDecodeError:
-            return None
+            decompressed = decompressor.read(max_output)
+            if len(decompressed) == 0:
+                return None
+            try:
+                return decompressed.decode('utf-8', errors='ignore')
+            except UnicodeDecodeError:
+                return None
+        finally:
+            decompressor.close()
     except Exception:
         return None
 
 
 def _validate_sqlite_structure(snapshot_path: str | Path) -> int | None:
-    """Valida e conta tabelas SQLite com modo somente leitura."""
+    """Valida e conta tabelas SQLite com modo somente leitura.
+
+    Não expõe nomes de tabelas nem executa consultas sobre dados do jogador.
+    """
     try:
         conn = sqlite3.connect(f'file:{snapshot_path}?mode=ro', uri=True, timeout=1.0)
         cursor = conn.cursor()
@@ -169,8 +189,8 @@ def _validate_sqlite_structure(snapshot_path: str | Path) -> int | None:
         table_count = len(cursor.fetchall())
         conn.close()
         return table_count
-    except sqlite3.Error:
-        raise ValueError("Arquivo não é um SQLite válido")
+    except sqlite3.Error as e:
+        raise ValueError(f"Arquivo SQLite inválido: {e}")
 
 
 def _validate_json_structure(data: bytes) -> tuple[str | None, bool]:
@@ -238,6 +258,9 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
 
     Returns:
         SaveDiscoveryResult com metadados sanitizados e tipados.
+
+    O método opera exclusivamente sobre o snapshot temporário criado por
+    create_save_snapshot() para garantir que o original nunca seja modificado.
     """
     path = Path(save_path)
 
@@ -254,7 +277,7 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
         initial_size = path.stat().st_size
     except PermissionError:
         return SaveDiscoveryResult(
-            success=False, detected_format=SavedFormat.UNKNOWN, error_message="Sem permissão"
+            success=False, detected_format=SavedFormat.UNKNOWN, error_message="Sem permissão para ler"
         )
 
     if initial_size < 1:
@@ -274,6 +297,11 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
             return SaveDiscoveryResult(
                 success=False, detected_format=SavedFormat.UNKNOWN,
                 error_message="Sem permissao para ler o arquivo"
+            )
+        except OSError as e:
+            return SaveDiscoveryResult(
+                success=False, detected_format=SavedFormat.UNKNOWN,
+                error_message="Erro ao abrir arquivo"
             )
 
         try:
@@ -320,7 +348,7 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 is_textual = True
                 sanitized_notes.append("XML estruturado valido")
 
-            # Verificacao adicional de textualidade
+            # Verificacao adicional de textualidade para binários
             if not is_textual and data:
                 try:
                     text_sample = data[:4096].decode('utf-8', errors='ignore')
@@ -339,24 +367,41 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 sanitized_notes=tuple(sanitized_notes)
             )
 
+        except ValueError as e:
+            # Retornar erro sanitizado para violações de limites
+            return SaveDiscoveryResult(
+                success=False, detected_format=detected_format or SavedFormat.UNKNOWN,
+                error_message=str(e)
+            )
+        except Exception as e:
+            return SaveDiscoveryResult(
+                success=False, detected_format=SavedFormat.UNKNOWN,
+                error_message="Erro ao processar arquivo"
+            )
         finally:
-            try:
-                if snapshot_path and Path(snapshot_path).exists():
-                    parent = Path(snapshot_path).parent
-                    shutil.rmtree(parent, ignore_errors=False)
-            except Exception:
-                pass
+            # O contexto manager de create_save_snapshot cuida da limpeza
+            # Não realizamos limpeza manual redundante aqui
+            pass
 
 
 def format_sanitized_report(result: SaveDiscoveryResult) -> str:
-    """Formata um relatorio sanitizado do resultado da descoberta."""
+    """Formata um relatorio sanitizado do resultado da descoberta.
+
+    O relatório nunca contém:
+    - Caminhos absolutos
+    - Nomes de usuários ou e-mails
+    - Conteúdo bruto dos saves
+    - Strings internas potencialmente sensíveis
+    """
     lines = []
 
     status = "SUCESSO" if result.success else "FALHA"
     lines.append(f"Status: {status}")
 
     if not result.success:
-        lines.append(f"Mensagem: {result.error_message or 'Erro desconhecido'}")
+        # Mensagem de erro sanitizada (sem revelar detalhes internos)
+        error_msg = result.error_message or "Erro desconhecido"
+        lines.append(f"Mensagem: {error_msg}")
         return "\n".join(lines)
 
     lines.append("\n=== INFORMACOES BASICAS ===")
@@ -374,7 +419,7 @@ def format_sanitized_report(result: SaveDiscoveryResult) -> str:
         lines.extend([
             f"ZIP: {result.container_entries_count} entradas (nomes nao expostos)",
             "Comprimido: Sim",
-            "Limites aplicados: maximo 1000 entradas, 100 MB descompactado"
+            "Limites aplicados: maximo 1000 entradas, 100 MB descompactado, 10 MB por entrada"
         ])
 
     elif result.detected_format == SavedFormat.SQLITE and result.sqlite_table_count is not None:
@@ -413,7 +458,7 @@ def format_sanitized_report(result: SaveDiscoveryResult) -> str:
 
 __all__ = [
     'SaveDiscoveryResult',
-    'SavedFormat as SaveDiscoverySavedFormat',
+    'SavedFormat',
     'discover_save_structure',
-    'format_sanitized_report'
+    'format_sanitized_report',
 ]

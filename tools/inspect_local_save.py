@@ -10,9 +10,6 @@ Esta ferramenta permite inspecionar um arquivo de save real sem:
 Uso:
     python inspect_local_save.py <caminho_do_save> [--output <destino_fora_do_repo>]
 
-Exemplo:
-    python inspect_local_save.py "./save.dat"
-
 Nota importante:
     - O caminho do arquivo de entrada nunca é incluído no relatório
     - O diretório de saída NÃO deve estar dentro do repositório Git
@@ -20,25 +17,37 @@ Nota importante:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 
 # Adiciona o diretório src ao path para imports
-SCRIPT_DIR = Path(__file__).parent.parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 
 
-def is_path_outside_repository(path: Path) -> bool:
-    """Verifica se um caminho está fora do diretório do repositório Git."""
-    repo_root = SCRIPT_DIR.resolve()
-    target_path = path.resolve()
-    return not str(target_path).startswith(str(repo_root))
+def is_path_outside_repository(output_path: Path) -> bool:
+    """Verifica se um caminho está fora do diretório do repositório Git.
+
+    Usa is_relative_to() (Python 3.9+) para comparação segura.
+    Retorna False se dentro do repositório, True se fora.
+    """
+    try:
+        resolved_output = output_path.resolve()
+        return not resolved_output.is_relative_to(SCRIPT_DIR)
+    except AttributeError:
+        # Fallback para versões mais antigas do Python
+        str_output = str(resolved_output)
+        str_script = str(SCRIPT_DIR)
+        return not (str_output.startswith(str_script + os.sep) or str_output == str_script)
 
 
 def main() -> int:
-    """Executa a ferramenta CLI com sanitização de caminhos."""
+    """Executa a ferramenta CLI com sanitização de caminhos.
+
+    Retorna 0 em caso de sucesso, diferente de zero em caso de erro.
+    Nunca grava caminho no repositório nem revela informações sensíveis.
+    """
     import argparse
     from mr_farmboy_manager.save_discovery import (
         discover_save_structure,
@@ -75,7 +84,7 @@ def main() -> int:
         return 1
 
     try:
-        # Importa módulo de descoberta
+        # Importa módulo de descoberta após verificar argumentos
         from mr_farmboy_manager.save_discovery import (
             discover_save_structure,
             format_sanitized_report,
@@ -93,37 +102,34 @@ def main() -> int:
         report = format_sanitized_report(result)
 
         # Escreve no console ou arquivo
-        output_path = args.output
+        output_file = args.output
 
-        if output_path:
-            output_file = Path(output_path)
+        if output_file:
+            output_path = Path(output_file)
+
+            # Verifica se saída está dentro do repositório Git
+            if not is_path_outside_repository(output_path):
+                print("Erro: O destino deve estar fora do repositório Git.")
+                return 1
 
             try:
-                resolved_save = str(save_path.resolve())
-                resolved_output = str(output_file.resolve())
-
-                save_parts = Path(resolved_save).parts
-                output_parts = Path(resolved_output).parts
-
-                # Verifica se saída está dentro do repositório
-                if not is_path_outside_repository(output_file):
-                    print("Aviso: O diretório de saída deve estar fora do repositório Git.", file=sys.stderr)
-
-                output_file.write_text(report, encoding='utf-8')
-                print(f"Relatório salvo em: {output_path}", file=sys.stderr)
-
+                output_path.write_text(report, encoding='utf-8')
+                print("Relatório salvo com sucesso.")
             except PermissionError:
                 print("Erro: Sem permissão para escrever no diretório de saída.", file=sys.stderr)
                 return 1
-            except OSError as e:
-                print(f"Erro ao salvar relatório: {e}", file=sys.stderr)
+            except OSError:
+                print("Erro ao salvar relatório.", file=sys.stderr)
                 return 1
         else:
             print(report)
 
         return 0
 
-    except Exception as e:
+    except ImportError:
+        print("Erro: Não foi possível carregar o módulo de descoberta.", file=sys.stderr)
+        return 2
+    except Exception:
         print("Erro: Não foi possível processar o arquivo selecionado.", file=sys.stderr)
         return 2
 
