@@ -17,6 +17,12 @@ from mr_farmboy_manager.save_discovery import (
     discover_save_structure,
     format_sanitized_report,
 )
+from mr_farmboy_manager.godot_tres import (
+    GodotTresParseError,
+    GodotTresProfile,
+    is_godot_tres_text,
+    parse_godot_tres_structure,
+)
 from mr_farmboy_manager.save_snapshot import (
     SnapshotResult,
     create_save_snapshot,
@@ -32,6 +38,11 @@ __all__ = [
     # save_snapshot
     "SnapshotResult",
     "create_save_snapshot",
+    # godot_tres
+    "GodotTresParseError",
+    "GodotTresProfile",
+    "is_godot_tres_text",
+    "parse_godot_tres_structure",
     # save_inspector
     "DetectedFormat",
     "SaveInspectionResult",
