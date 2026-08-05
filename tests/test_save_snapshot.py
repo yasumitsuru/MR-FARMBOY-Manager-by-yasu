@@ -84,14 +84,14 @@ class TestCreateSaveSnapshot:
         original_data = b'test data'
         original_file.write_bytes(original_data)
 
-        try:
-            with create_save_snapshot(original_file) as result:
-                assert isinstance(result, SnapshotResult)
-                assert Path(result.snapshot_path).exists() is True
-        except ValueError:
-            pass
+        with create_save_snapshot(original_file) as result:
+            snapshot_file = Path(result.snapshot_path)
+            assert isinstance(result, SnapshotResult)
+            assert snapshot_file.exists() is True
 
-        # Verifica que o snapshot foi removido (usando tmp_path para garantir limpeza)
+        # Após sair do contexto, o arquivo de snapshot deve ter sido removido
+        assert snapshot_file.exists() is False, \
+            f"Arquivo de snapshot deve ser removido: {snapshot_file}"
 
     def test_cleanup_after_exception(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
@@ -244,11 +244,14 @@ class TestCreateSaveSnapshot:
         original_data = b'test data'
         original_file.write_bytes(original_data)
 
-        try:
-            with create_save_snapshot(original_file) as result:
-                assert Path(result.snapshot_path).exists() is True
-        except ValueError:
-            pass
+        with create_save_snapshot(original_file) as result:
+            snapshot_dir = Path(result.snapshot_path).parent
+            assert Path(result.snapshot_path).exists() is True
+            assert snapshot_dir.exists() is True
+
+        # Após sair do contexto, o diretório temporário deve ter sido removido
+        assert snapshot_dir.exists() is False, \
+            f"Diretório temporário do snapshot deve ser removido: {snapshot_dir}"
 
     def test_cleanup_on_shutil_copy2_failure(self, tmp_path: Path) -> None:
         """Verifica que a limpeza ocorre quando shutil.copy2 falha."""

@@ -170,18 +170,23 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         except FileNotFoundError:
             raise FileNotFoundError(f"Arquivo desapareceu durante a operação: {path}")
 
-    except Exception as e:
-        # Limpa pasta temporária em caso de erro (preservando exceção original)
-        try:
-            if temp_dir is not None and Path(temp_dir).exists():
+    finally:
+        # Remove a pasta temporária em TODOS os caminhos de saída (sucesso ou erro),
+        # evitando vazamento de diretórios temporários. A exceção original, se houver,
+        # continua propagando após a limpeza.
+        if temp_dir is not None and Path(temp_dir).exists():
+            try:
                 # Não usa ignore_errors=True para detectar falha real na limpeza
                 shutil.rmtree(temp_dir, ignore_errors=False)
-        except FileNotFoundError:
-            pass  # Já foi removido ou não existe mais
-        except PermissionError:
-            raise RuntimeError(f"Erro ao limpar diretório temporário {temp_dir}: permissão negada") from e
-        except OSError as e:
-            # Se já há uma exceção ativa, adiciona a falha de limpeza como causa
-            if "Operation cancelled" not in str(e):
-                raise RuntimeError(f"Erro ao remover diretório temporário {temp_dir}: {e}") from e
-        raise
+            except FileNotFoundError:
+                pass  # Já foi removido ou não existe mais
+            except PermissionError as cleanup_error:
+                raise RuntimeError(
+                    f"Erro ao limpar diretório temporário {temp_dir}: permissão negada"
+                ) from cleanup_error
+            except OSError as cleanup_error:
+                # Se já há uma exceção ativa, adiciona a falha de limpeza como causa
+                if "Operation cancelled" not in str(cleanup_error):
+                    raise RuntimeError(
+                        f"Erro ao remover diretório temporário {temp_dir}: {cleanup_error}"
+                    ) from cleanup_error
