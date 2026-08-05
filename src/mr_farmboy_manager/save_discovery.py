@@ -15,6 +15,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
+from .godot_tres import is_godot_tres_text, parse_godot_tres_structure
 from .save_snapshot import create_save_snapshot
 
 
@@ -30,6 +31,7 @@ class SavedFormat(Enum):
     JSON_ARRAY = auto()
     JSON_PRIMITIVE = auto()
     XML_VALID = auto()
+    GODOT_TRES_TEXT = auto()
     BINARY_UNKNOWN = auto()
 
 
@@ -52,6 +54,12 @@ class SaveDiscoveryResult:
     top_level_json_type: str | None = None
     xml_root_tag_present: bool | None = None
     compression_detected: bool = False
+    godot_format_version: int | None = None
+    godot_section_count: int | None = None
+    godot_property_count: int | None = None
+    godot_ext_resource_count: int | None = None
+    godot_sub_resource_count: int | None = None
+    godot_variant_category_counts: tuple[tuple[str, int], ...] = ()
     sanitized_notes: tuple[str, ...] = field(default_factory=tuple)
     error_message: str | None = None
 
@@ -260,6 +268,10 @@ def _discover_format(data: bytes) -> SavedFormat:
     except Exception:
         pass
 
+    # Godot Text Resource (.tres) - detectado antes de BINARY_UNKNOWN/UNKNOWN
+    if is_godot_tres_text(data):
+        return SavedFormat.GODOT_TRES_TEXT
+
     try:
         content = data.decode('utf-8', errors='ignore')
         if _estimate_textual_ratio(content) >= 0.9:
@@ -348,6 +360,12 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
             sqlite_table_count = None
             top_level_json_type = None
             xml_root_tag_present = None
+            godot_format_version = None
+            godot_section_count = None
+            godot_property_count = None
+            godot_ext_resource_count = None
+            godot_sub_resource_count = None
+            godot_variant_category_counts: tuple[tuple[str, int], ...] = ()
             sanitized_notes: list[str] = []
             is_textual = False
 
@@ -383,6 +401,19 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 is_textual = True
                 sanitized_notes.append("XML estruturado valido")
 
+            elif detected_format == SavedFormat.GODOT_TRES_TEXT:
+                profile = parse_godot_tres_structure(data)
+                godot_format_version = profile.format_version
+                godot_section_count = profile.total_section_count
+                godot_property_count = profile.property_count
+                godot_ext_resource_count = profile.ext_resource_count
+                godot_sub_resource_count = profile.sub_resource_count
+                godot_variant_category_counts = profile.variant_category_counts
+                is_textual = True
+                sanitized_notes.append("Godot Text Resource (.tres) detectado")
+                for warning in profile.sanitized_warnings:
+                    sanitized_notes.append(f"Godot: {warning}")
+
             # Verificacao adicional de textualidade para binários
             if not is_textual and data:
                 try:
@@ -399,6 +430,10 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 is_textual=is_textual, container_entries_count=container_entries_count,
                 sqlite_table_count=sqlite_table_count, top_level_json_type=top_level_json_type,
                 xml_root_tag_present=xml_root_tag_present, compression_detected=compression_detected,
+                godot_format_version=godot_format_version, godot_section_count=godot_section_count,
+                godot_property_count=godot_property_count, godot_ext_resource_count=godot_ext_resource_count,
+                godot_sub_resource_count=godot_sub_resource_count,
+                godot_variant_category_counts=godot_variant_category_counts,
                 sanitized_notes=tuple(sanitized_notes)
             )
 
@@ -466,6 +501,24 @@ def format_sanitized_report(result: SaveDiscoveryResult) -> str:
 
     elif result.detected_format == SavedFormat.XML_VALID:
         lines.append("XML estruturado com parsing seguro (tags raiz nao expostas)")
+
+    elif result.detected_format == SavedFormat.GODOT_TRES_TEXT:
+        lines.append("Godot Text Resource (.tres) - ResourceFormatSaverText")
+        if result.godot_format_version is not None:
+            lines.append(f"Godot Text Resource: formato {result.godot_format_version}")
+        if result.godot_section_count is not None:
+            lines.append(f"Secoes estruturais: {result.godot_section_count}")
+        if result.godot_property_count is not None:
+            lines.append(f"Propriedades: {result.godot_property_count}")
+        if result.godot_ext_resource_count is not None:
+            lines.append(f"Recursos externos: {result.godot_ext_resource_count}")
+        if result.godot_sub_resource_count is not None:
+            lines.append(f"Sub-recursos: {result.godot_sub_resource_count}")
+        if result.godot_variant_category_counts:
+            categories = ", ".join(
+                f"{name}={count}" for name, count in result.godot_variant_category_counts
+            )
+            lines.append(f"Categorias de Variant: {categories}")
 
     elif result.detected_format == SavedFormat.BINARY_UNKNOWN:
         lines.append("Binario desconhecido ou com conteudo textual legivel")
