@@ -130,6 +130,25 @@ class TestZipInspection:
         result = discover_save_structure(str(zip_path))
         assert result.success is True or result.error_message is not None
 
+    def test_zip_extensions_aggregated_without_names(self, tmp_path):
+        """Teste que extensões ZIP são agregadas sem expor nomes de entradas."""
+        zip_path = tmp_path / "save_ext.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr("folder/player.data.json", '{"player": 1}')
+            zf.writestr("notes.txt", "hello")
+
+        result = discover_save_structure(str(zip_path))
+        assert result.success is True
+        assert result.container_entries_count == 2
+
+        notes = " ".join(result.sanitized_notes)
+        assert "json" in notes, "Extensão 'json' deveria estar nas notas sanitizadas"
+        assert "txt" in notes, "Extensão 'txt' deveria estar nas notas sanitizadas"
+
+        report = format_sanitized_report(result)
+        for leaked in ["player.data.json", "notes.txt", "folder"]:
+            assert leaked not in report, f"Nome de entrada '{leaked}' vazou no relatório!"
+
 
 class TestGzipInspection:
     def test_gzip_decompression_limit(self, tmp_path):
@@ -183,6 +202,43 @@ class TestFileValidation:
         result = discover_save_structure(str(dir_path))
         assert result.success is False
         assert result.error_message == "Diretório, não arquivo"
+
+    def test_input_size_limit_enforced(self, tmp_path, monkeypatch):
+        """Teste que arquivo acima do limite de inspeção é rejeitado com mensagem sanitizada."""
+        import contextlib
+        import mr_farmboy_manager.save_discovery as sd_module
+
+        # Reduz o limite temporariamente para um valor pequeno
+        monkeypatch.setattr(sd_module, 'MAX_INPUT_SIZE_BYTES', 16)
+
+        content = b'x' * 1024
+        save_file = tmp_path / "big_save.dat"
+        save_file.write_bytes(content)
+
+        # Registra o caminho do snapshot para verificar remoção após a inspeção
+        recorded = {}
+        real_create = sd_module.create_save_snapshot
+
+        @contextlib.contextmanager
+        def recording_create(path):
+            with real_create(path) as info:
+                recorded['snapshot_path'] = info.snapshot_path
+                yield info
+
+        monkeypatch.setattr(sd_module, 'create_save_snapshot', recording_create)
+
+        result = discover_save_structure(str(save_file))
+
+        assert result.success is False
+        assert "limite de inspeção" in (result.error_message or "")
+        assert str(tmp_path) not in (result.error_message or "")
+        # Arquivo original preservado e inalterado
+        assert save_file.exists()
+        assert save_file.read_bytes() == content
+        # Snapshot criado e depois removido
+        assert recorded.get('snapshot_path'), "Snapshot deveria ter sido criado antes da rejeição"
+        assert Path(recorded['snapshot_path']).exists() is False, \
+            "Snapshot deve ser removido após a inspeção"
 
 
 class TestSanitization:

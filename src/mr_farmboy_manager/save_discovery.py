@@ -60,6 +60,7 @@ class SaveDiscoveryResult:
 MAX_ZIP_ENTRIES = 1000
 MAX_DECOMPRESSED_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 MAX_ENTRY_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB por entrada
+MAX_INPUT_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB de entrada
 
 
 def _estimate_textual_ratio(content: str) -> float:
@@ -132,25 +133,28 @@ def _validate_zip_structure(zip_path: str | Path) -> tuple[int, bool]:
 def _get_aggregated_extensions(zip_path: str | Path) -> set[str]:
     """Obtém extensões agregadas de entradas ZIP sem expor nomes completos.
 
-    Usa '.' in filename para verificar presença de extensão.
-    Não silencia todos os erros indiscriminadamente.
+    ZipInfo.filename é str; extrai apenas a extensão (Path.suffix) e nunca
+    retorna o nome completo da entrada.
     """
-    extensions = set()
+    extensions: set[str] = set()
     try:
         with zipfile.ZipFile(str(zip_path), 'r') as zf:
             for info in zf.infolist():
-                # Usar '.' in filename para verificar presença de extensão
-                if b'.' in info.filename and info.file_size > 0:
-                    last_dot = info.filename.rfind(b'.')
-                    if last_dot != -1:
-                        ext = info.filename[last_dot + 1:].lower()
-                        if len(ext) < 20:  # Evitar extensões muito longas
-                            extensions.add(ext.decode('utf-8', errors='ignore'))
-    except zipfile.BadZipFile as e:
-        raise ValueError(f"Arquivo ZIP inválido: {e}")
-    except Exception as e:
-        # Log do erro mas não silenciar completamente
-        return extensions
+                if info.file_size <= 0 or '.' not in info.filename:
+                    continue
+                ext = Path(info.filename).suffix
+                if not ext:
+                    continue
+                ext = ext.lower()
+                if ext.startswith('.'):
+                    ext = ext[1:]
+                if not ext or len(ext) >= 20:
+                    continue
+                extensions.add(ext)
+    except zipfile.BadZipFile:
+        raise ValueError("Arquivo ZIP inválido")
+    except OSError:
+        raise ValueError("Erro ao ler arquivo ZIP")
     return extensions
 
 
@@ -305,8 +309,24 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
         snapshot_path = snapshot_info.snapshot_path
 
         try:
+            # Limite de entrada: verifica o tamanho do snapshot antes de carregar
+            snapshot_size = Path(snapshot_path).stat().st_size
+            if snapshot_size > MAX_INPUT_SIZE_BYTES:
+                return SaveDiscoveryResult(
+                    success=False, detected_format=SavedFormat.UNKNOWN,
+                    error_message="Arquivo acima do limite de inspeção"
+                )
+
+            # Leitura limitada - nunca f.read() sem argumento
             with open(snapshot_path, 'rb') as f:
-                data = f.read()
+                data = f.read(MAX_INPUT_SIZE_BYTES + 1)
+
+            # Defesa contra crescimento do arquivo entre stat e leitura
+            if len(data) > MAX_INPUT_SIZE_BYTES:
+                return SaveDiscoveryResult(
+                    success=False, detected_format=SavedFormat.UNKNOWN,
+                    error_message="Arquivo acima do limite de inspeção"
+                )
 
         except PermissionError:
             return SaveDiscoveryResult(
