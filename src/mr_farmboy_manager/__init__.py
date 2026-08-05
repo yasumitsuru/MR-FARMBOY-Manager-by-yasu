@@ -11,6 +11,11 @@ from mr_farmboy_manager.save_loader import (
     SaveLoadResult,
     load_save,
 )
+from mr_farmboy_manager.save_discovery import (
+    SaveDiscoveryResult,
+    discover_save_structure,
+    format_sanitized_report,
+)
 from mr_farmboy_manager.save_snapshot import (
     SnapshotResult,
     create_save_snapshot,
@@ -32,4 +37,9 @@ __all__ = [
     "calculate_file_hash",
     "inspect_save",
     "verify_file_integrity",
+    # save_discovery
+    "SaveDiscoveryResult",
+    "SaveDiscoverySavedFormat",
+    "discover_save_structure",
+    "format_sanitized_report",
 ]

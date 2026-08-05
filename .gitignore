@@ -48,6 +48,21 @@ dist/
 .vscode/
 *.swp
 *.swo
+
+# ============================================
+# Save files e relatórios - Tarefa 2.3
+# ============================================
+# Saves do jogo (não versionar dados reais)
+*.save
+*.sav
+*.dat
+*.db
+*.sqlite
+*.sqlite3
+
+# Relatórios de descoberta local (fora do repo Git)
+local_reports/
+discovery_reports/
 *~
 .DS_Store
 
