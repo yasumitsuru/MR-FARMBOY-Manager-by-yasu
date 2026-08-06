@@ -165,6 +165,14 @@ def create_main_window(
     load_saves_button.setToolTip("O carregamento será habilitado após a integração com a validação de caminhos.")
     manual_paths_layout.addWidget(load_saves_button)
 
+    def on_load_saves_clicked() -> None:
+        if manual_save_loader is None:
+            return
+
+        manual_save_loader(save_path_input.text())
+
+    load_saves_button.clicked.connect(on_load_saves_clicked)
+
     layout.addWidget(manual_paths_group)
 
     # Seção de slots de save
