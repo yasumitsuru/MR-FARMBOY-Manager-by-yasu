@@ -47,6 +47,30 @@ O MR FARMBOY Manager é um painel desktop para análise financeira e gerenciamen
 
 ---
 
+## Fonte de dados e localização dos saves
+
+O save do jogo é a fonte de verdade do MR FARMBOY Manager.
+
+A aplicação não utiliza cadastro manual de fazenda. Informações como plantações,
+estoque, trabalhadores e dados financeiros devem ser extraídas dos arquivos do
+save.
+
+No Windows, a pasta base dos saves é:
+
+```text
+%APPDATA%\Godot\app_userdata\MR FARMBOY\game_data
+```
+
+O primeiro slot confirmado é:
+
+```text
+%APPDATA%\Godot\app_userdata\MR FARMBOY\game_data\save_1
+```
+
+Os arquivos `.tres` ficam dentro da pasta `save_1`.
+
+---
+
 ## Recursos do Jogo
 
 > ⚠️ **ATENÇÃO**: Não distribuímos recursos protegidos por direitos autorais.
