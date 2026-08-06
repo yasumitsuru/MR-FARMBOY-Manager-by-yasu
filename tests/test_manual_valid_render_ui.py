@@ -175,7 +175,7 @@ class TestManualValidRenderUI:
 
         def manual_loader(path: str) -> SaveSlotsLoadResult:
             return SaveSlotsLoadResult(
-                validation=DirectoryValidationResult(code=DirectoryValidationCode.NOT_FOUND, path=None),
+                validation=DirectoryValidationResult(code=DirectoryValidationCode.NOT_DIRECTORY, path=None),
                 summaries=(),
             )
 

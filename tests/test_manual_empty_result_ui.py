@@ -141,10 +141,10 @@ class TestManualEmptyResultUI:
         assert label.isHidden() is False
         assert list_widget.isHidden() is True
 
-    def test_not_found_permanece_sem_tratamento(
+    def test_not_directory_permanece_sem_tratamento(
         self, qt_app: QApplication
     ) -> None:
-        """Verifica que NOT_FOUND permanece sem tratamento visual."""
+        """Verifica que NOT_DIRECTORY permanece sem tratamento visual."""
         from mr_farmboy_manager.application import create_main_window
 
         slot = SaveSlot(number=1, path=Path("save_1"))
@@ -158,7 +158,7 @@ class TestManualEmptyResultUI:
             nonlocal call_count
             call_count += 1
             return SaveSlotsLoadResult(
-                validation=DirectoryValidationResult(code=DirectoryValidationCode.NOT_FOUND, path=None),
+                validation=DirectoryValidationResult(code=DirectoryValidationCode.NOT_DIRECTORY, path=None),
                 summaries=(),
             )
 
@@ -176,7 +176,7 @@ class TestManualEmptyResultUI:
         assert list_widget.count() == 1
         assert list_widget.item(0).text() == "save_1 — Slot 1 — 4 arquivos .tres"
 
-        # Clique com resultado NOT_FOUND - não deve alterar nada
+        # Clique com resultado NOT_DIRECTORY - não deve alterar nada
         button.click()
         QApplication.processEvents()
 
