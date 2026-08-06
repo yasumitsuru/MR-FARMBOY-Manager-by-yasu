@@ -154,13 +154,22 @@ def create_main_window(
     manual_paths_layout.addWidget(browse_game_install_button)
 
     def choose_game_install_directory() -> None:
-        if game_install_directory_chooser is None:
+        if game_install_directory_chooser is not None:
+            selected = game_install_directory_chooser()
+
+            if selected is not None:
+                game_install_path_input.setText(str(selected))
+
             return
 
-        selected = game_install_directory_chooser()
+        selected_path = QFileDialog.getExistingDirectory(
+            window,
+            "Selecionar pasta de instalação do jogo",
+            game_install_path_input.text(),
+        )
 
-        if selected is not None:
-            game_install_path_input.setText(str(selected))
+        if selected_path:
+            game_install_path_input.setText(selected_path)
 
     browse_game_install_button.clicked.connect(choose_game_install_directory)
 
