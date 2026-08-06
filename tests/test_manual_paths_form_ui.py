@@ -121,8 +121,8 @@ class TestFormularioVisualDeCaminhos:
         assert browse_install_button is not None
         assert browse_install_button.text() == "Procurar..."
 
-    def test_botoes_de_procura_comecam_desabilitados(self, qt_app: QApplication) -> None:
-        """Teste que botões de procura começam desabilitados."""
+    def test_botoes_de_procura_comecam_habilitados(self, qt_app: QApplication) -> None:
+        """Teste que botões de procura começam habilitados."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)

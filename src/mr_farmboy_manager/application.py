@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 from pathlib import Path
 
+DirectoryChooser = Callable[[], Path | None]
+
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -54,6 +56,7 @@ def create_main_window(
     app: QApplication | None = None,
     loader: SaveSlotsLoader | None = None,
     on_slot_selected: SaveSlotSelectedCallback = None,
+    save_directory_chooser: DirectoryChooser | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -104,6 +107,17 @@ def create_main_window(
     browse_save_path_button.setObjectName("browse_save_path_button")
     browse_save_path_button.setEnabled(True)
     manual_paths_layout.addWidget(browse_save_path_button)
+
+    def choose_save_directory() -> None:
+        if save_directory_chooser is None:
+            return
+
+        selected = save_directory_chooser()
+
+        if selected is not None:
+            save_path_input.setText(str(selected))
+
+    browse_save_path_button.clicked.connect(choose_save_directory)
 
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
     save_path_hint_label.setObjectName("save_path_hint_label")
