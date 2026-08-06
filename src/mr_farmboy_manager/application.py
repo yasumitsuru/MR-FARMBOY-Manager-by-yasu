@@ -10,9 +10,12 @@ from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QVBoxLayout,
+    QHBoxLayout,
     QWidget,
     QLabel,
     QGroupBox,
+    QLineEdit,
+    QPushButton,
     QListWidget,
     QListWidgetItem,
 )
@@ -80,6 +83,58 @@ def create_main_window(
     label_development.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label_development.setWordWrap(True)
     layout.addWidget(label_development)
+
+    # Seção de configuração de caminhos manuais
+    manual_paths_group = QGroupBox("Configuração de caminhos")
+    manual_paths_group.setObjectName("manual_paths_group")
+
+    manual_paths_layout = QVBoxLayout()
+    manual_paths_group.setLayout(manual_paths_layout)
+
+    # Pasta dos saves
+    save_path_label = QLabel("Pasta dos saves")
+    manual_paths_layout.addWidget(save_path_label)
+
+    save_path_input = QLineEdit()
+    save_path_input.setObjectName("save_path_input")
+    save_path_input.setPlaceholderText("Selecione ou informe a pasta dos saves")
+    manual_paths_layout.addWidget(save_path_input)
+
+    browse_save_path_button = QPushButton("Procurar...")
+    browse_save_path_button.setObjectName("browse_save_path_button")
+    browse_save_path_button.setEnabled(False)
+    manual_paths_layout.addWidget(browse_save_path_button)
+
+    save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
+    save_path_hint_label.setObjectName("save_path_hint_label")
+    manual_paths_layout.addWidget(save_path_hint_label)
+
+    # Pasta de instalação do jogo
+    game_install_path_label = QLabel("Pasta de instalação do jogo")
+    manual_paths_layout.addWidget(game_install_path_label)
+
+    game_install_path_input = QLineEdit()
+    game_install_path_input.setObjectName("game_install_path_input")
+    game_install_path_input.setPlaceholderText("Selecione ou informe a pasta de instalação")
+    manual_paths_layout.addWidget(game_install_path_input)
+
+    browse_game_install_button = QPushButton("Procurar...")
+    browse_game_install_button.setObjectName("browse_game_install_button")
+    browse_game_install_button.setEnabled(False)
+    manual_paths_layout.addWidget(browse_game_install_button)
+
+    game_install_hint_label = QLabel("Possível caminho Steam: <biblioteca Steam>\\steamapps\\common\\MR FARMBOY")
+    game_install_hint_label.setObjectName("game_install_hint_label")
+    manual_paths_layout.addWidget(game_install_hint_label)
+
+    # Botão de ação futuro
+    load_saves_button = QPushButton("Carregar saves")
+    load_saves_button.setObjectName("load_saves_button")
+    load_saves_button.setEnabled(False)
+    load_saves_button.setToolTip("O carregamento será habilitado após a integração com a validação de caminhos.")
+    manual_paths_layout.addWidget(load_saves_button)
+
+    layout.addWidget(manual_paths_group)
 
     # Seção de slots de save
     save_slots_group = QGroupBox("Slots de Save")
