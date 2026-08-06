@@ -57,6 +57,7 @@ def create_main_window(
     loader: SaveSlotsLoader | None = None,
     on_slot_selected: SaveSlotSelectedCallback = None,
     save_directory_chooser: DirectoryChooser | None = None,
+    game_install_directory_chooser: DirectoryChooser | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -136,6 +137,17 @@ def create_main_window(
     browse_game_install_button.setObjectName("browse_game_install_button")
     browse_game_install_button.setEnabled(True)
     manual_paths_layout.addWidget(browse_game_install_button)
+
+    def choose_game_install_directory() -> None:
+        if game_install_directory_chooser is None:
+            return
+
+        selected = game_install_directory_chooser()
+
+        if selected is not None:
+            game_install_path_input.setText(str(selected))
+
+    browse_game_install_button.clicked.connect(choose_game_install_directory)
 
     game_install_hint_label = QLabel("Possível caminho Steam: <biblioteca Steam>\\steamapps\\common\\MR FARMBOY")
     game_install_hint_label.setObjectName("game_install_hint_label")
