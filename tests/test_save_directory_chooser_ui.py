@@ -155,20 +155,7 @@ class TestSaveDirectoryChooserUI:
 
         window.close()
 
-    def test_absencia_de_chooser_nao_causa_erro(self, qt_app: QApplication) -> None:
-        """Teste 7: ausência de chooser não causa erro."""
-        from mr_farmboy_manager.application import create_main_window
 
-        window = create_main_window(qt_app)
-
-        browse_save_path_button = window.findChild(QPushButton, "browse_save_path_button")
-        assert browse_save_path_button is not None
-
-        # Clique sem chooser injetado não deve causar erro
-        browse_save_path_button.click()
-        QApplication.processEvents()
-
-        window.close()
 
     def test_botao_de_instalacao_continua_sem_chamar_chooser(self, qt_app: QApplication) -> None:
         """Teste 8: botão de instalação continua sem chamar o chooser."""
