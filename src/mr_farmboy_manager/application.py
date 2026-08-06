@@ -185,10 +185,12 @@ def create_main_window(
     empty_label = QLabel("Nenhum save encontrado")
     empty_label.setObjectName("empty_save_slots_label")
     empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    empty_label.hide()
     save_slots_layout.addWidget(empty_label)
 
     save_slots_list = QListWidget()
     save_slots_list.setObjectName("save_slots_list")
+    save_slots_list.hide()
     save_slots_layout.addWidget(save_slots_list)
 
     layout.addWidget(save_slots_group)
@@ -212,19 +214,38 @@ def create_main_window(
 
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
 
-    for summary in summaries:
-        line_text = f"save_{summary.slot.number} — Slot {summary.slot.number} — {summary.tres_file_count} arquivos .tres"
-        item = QListWidgetItem(line_text)
-        save_slots_list.addItem(item)
-
-    if not summaries:
-        empty_label.show()
-        save_slots_list.hide()
-    else:
-        empty_label.hide()
-        save_slots_list.show()
+    render_save_slot_summaries(empty_label, save_slots_list, summaries)
 
     return window
+
+
+def render_save_slot_summaries(
+    empty_label: QLabel,
+    save_slots_list: QListWidget,
+    summaries_to_render: list[SaveSlotSummary],
+) -> None:
+    """Renderiza os resumos dos slots de save na interface.
+
+    Args:
+        empty_label: Label a ser mostrado quando não há saves.
+        save_slots_list: Lista de widgets onde os slots serão exibidos.
+        summaries_to_render: Lista de resumos a serem renderizados.
+    """
+    if not summaries_to_render:
+        empty_label.show()
+        save_slots_list.hide()
+        return
+
+    empty_label.hide()
+    save_slots_list.show()
+
+    for summary in summaries_to_render:
+        line_text = (
+            f"save_{summary.slot.number} — "
+            f"Slot {summary.slot.number} — "
+            f"{summary.tres_file_count} arquivos .tres"
+        )
+        save_slots_list.addItem(QListWidgetItem(line_text))
 
 
 def run() -> int:
