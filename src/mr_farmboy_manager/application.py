@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QListWidget,
     QListWidgetItem,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt
 
@@ -115,13 +116,22 @@ def create_main_window(
     manual_paths_layout.addWidget(browse_save_path_button)
 
     def choose_save_directory() -> None:
-        if save_directory_chooser is None:
+        if save_directory_chooser is not None:
+            selected = save_directory_chooser()
+
+            if selected is not None:
+                save_path_input.setText(str(selected))
+
             return
 
-        selected = save_directory_chooser()
+        selected_path = QFileDialog.getExistingDirectory(
+            window,
+            "Selecionar pasta dos saves",
+            save_path_input.text(),
+        )
 
-        if selected is not None:
-            save_path_input.setText(str(selected))
+        if selected_path:
+            save_path_input.setText(selected_path)
 
     browse_save_path_button.clicked.connect(choose_save_directory)
 
