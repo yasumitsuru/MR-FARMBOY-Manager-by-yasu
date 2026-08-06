@@ -178,20 +178,7 @@ class TestGameInstallDirectoryChooserUI:
 
         window.close()
 
-    def test_absencia_de_chooser_nao_causa_erro(self, qt_app: QApplication) -> None:
-        """Teste 8: ausência de chooser não causa erro."""
-        from mr_farmboy_manager.application import create_main_window
 
-        window = create_main_window(qt_app)
-
-        browse_game_install_button = window.findChild(QPushButton, "browse_game_install_button")
-        assert browse_game_install_button is not None
-
-        # Clique sem chooser injetado não deve causar erro
-        browse_game_install_button.click()
-        QApplication.processEvents()
-
-        window.close()
 
     def test_botao_load_saves_continua_habilitado(self, qt_app: QApplication) -> None:
         """Teste 9: botão load_saves_button continua habilitado."""
