@@ -169,7 +169,12 @@ def create_main_window(
         if manual_save_loader is None:
             return
 
-        manual_save_loader(save_path_input.text())
+        result = manual_save_loader(save_path_input.text())
+
+        if not result.is_success:
+            return
+
+        render_save_slot_summaries(empty_label, save_slots_list, list(result.summaries))
 
     load_saves_button.clicked.connect(on_load_saves_clicked)
 
@@ -232,12 +237,14 @@ def render_save_slot_summaries(
         summaries_to_render: Lista de resumos a serem renderizados.
     """
     if not summaries_to_render:
+        save_slots_list.clear()
         empty_label.show()
         save_slots_list.hide()
         return
 
     empty_label.hide()
     save_slots_list.show()
+    save_slots_list.clear()
 
     for summary in summaries_to_render:
         line_text = (
