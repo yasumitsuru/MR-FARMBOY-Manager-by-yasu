@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult
+from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult, DirectoryValidationCode
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
 
 
@@ -170,6 +170,11 @@ def create_main_window(
             return
 
         result = manual_save_loader(save_path_input.text())
+
+        if result.validation.code is DirectoryValidationCode.EMPTY:
+            render_save_slot_summaries(empty_label, save_slots_list, [])
+            empty_label.setText("Informe a pasta dos saves.")
+            return
 
         if not result.is_success:
             return
