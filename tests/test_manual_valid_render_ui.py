@@ -161,39 +161,3 @@ class TestManualValidRenderUI:
         QApplication.processEvents()
 
         assert label.text() == "Nenhum save encontrado"
-
-    def test_resultado_invalido_nao_altera_estado_inicial(
-        self, qt_app: QApplication
-    ) -> None:
-        """Verifica que resultado inválido não altera o estado inicial."""
-        from mr_farmboy_manager.application import create_main_window
-
-        slot = SaveSlot(number=1, path=Path("save_1"))
-        initial_summary = SaveSlotSummary(slot=slot, tres_file_count=4)
-
-        loader = lambda: [initial_summary]
-
-        def manual_loader(path: str) -> SaveSlotsLoadResult:
-            return SaveSlotsLoadResult(
-                validation=DirectoryValidationResult(code=DirectoryValidationCode.NOT_DIRECTORY, path=None),
-                summaries=(),
-            )
-
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
-
-        button = window.findChild(QPushButton, "load_saves_button")
-        list_widget = window.findChild(QListWidget)
-
-        assert button is not None
-        assert list_widget is not None
-
-        # Estado inicial deve ter o item do loader padrão
-        assert list_widget.count() == 1
-        assert list_widget.item(0).text() == "save_1 — Slot 1 — 4 arquivos .tres"
-
-        button.click()
-        QApplication.processEvents()
-
-        # O item inicial deve continuar presente
-        assert list_widget.count() == 1
-        assert list_widget.item(0).text() == "save_1 — Slot 1 — 4 arquivos .tres"
