@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
     QLabel,
     QGroupBox,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt
 
@@ -42,9 +44,13 @@ def create_application() -> QApplication:
 SaveSlotsLoader = Callable[[], list[SaveSlotSummary]]
 
 
+SaveSlotSelectedCallback = Callable[[SaveSlotSummary], None] | None
+
+
 def create_main_window(
     app: QApplication | None = None,
     loader: SaveSlotsLoader | None = None,
+    on_slot_selected: SaveSlotSelectedCallback = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -87,9 +93,8 @@ def create_main_window(
     empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     save_slots_layout.addWidget(empty_label)
 
-    save_slots_list = QLabel()
+    save_slots_list = QListWidget()
     save_slots_list.setObjectName("save_slots_list")
-    save_slots_list.setWordWrap(True)
     save_slots_layout.addWidget(save_slots_list)
 
     layout.addWidget(save_slots_group)
@@ -100,12 +105,23 @@ def create_main_window(
     else:
         summaries = loader()
 
-    save_slots_list.setText("")
+    # Armazena a lista de resumos para mapeamento com os itens da lista
+    _summaries_for_selection: list[SaveSlotSummary] = summaries
+
+    def on_item_selected():
+        """Callback chamado quando um item é selecionado."""
+        current_row = save_slots_list.currentRow()
+        if current_row >= 0 and current_row < len(_summaries_for_selection):
+            summary = _summaries_for_selection[current_row]
+            if on_slot_selected is not None:
+                on_slot_selected(summary)
+
+    save_slots_list.itemSelectionChanged.connect(on_item_selected)
 
     for summary in summaries:
         line_text = f"save_{summary.slot.number} — Slot {summary.slot.number} — {summary.tres_file_count} arquivos .tres"
-        label = QLabel(line_text)
-        save_slots_layout.addWidget(label)
+        item = QListWidgetItem(line_text)
+        save_slots_list.addItem(item)
 
     if not summaries:
         empty_label.show()

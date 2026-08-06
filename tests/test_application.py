@@ -92,7 +92,7 @@ class TestInterface:
 
         labels = window.findChildren(QLabel)
 
-        assert len(labels) == 4
+        assert len(labels) == 2
 
         labels_text = [label.text() for label in labels]
 
@@ -106,7 +106,7 @@ class TestInterface:
 
         labels = window.findChildren(QLabel)
 
-        assert len(labels) == 4
+        assert len(labels) == 2
 
         labels_text = [label.text() for label in labels]
 
