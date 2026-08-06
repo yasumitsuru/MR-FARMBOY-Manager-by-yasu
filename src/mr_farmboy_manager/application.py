@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult, DirectoryValidationCode
+from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult, DirectoryValidationCode, load_save_slot_summaries
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
 
 
@@ -166,10 +166,10 @@ def create_main_window(
     manual_paths_layout.addWidget(load_saves_button)
 
     def on_load_saves_clicked() -> None:
-        if manual_save_loader is None:
-            return
-
-        result = manual_save_loader(save_path_input.text())
+        if manual_save_loader is not None:
+            result = manual_save_loader(save_path_input.text())
+        else:
+            result = load_save_slot_summaries(save_path_input.text())
 
         if result.validation.code is DirectoryValidationCode.EMPTY:
             render_save_slot_summaries(empty_label, save_slots_list, [])
