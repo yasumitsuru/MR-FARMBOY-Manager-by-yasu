@@ -92,25 +92,25 @@ class TestInterface:
 
         labels = window.findChildren(QLabel)
 
-        assert len(labels) == 2
+        assert len(labels) == 4
 
         labels_text = [label.text() for label in labels]
 
         assert "Projeto em desenvolvimento" in labels_text
 
-    def test_contem_label_nenhum_save_carregado(self, qt_app: Any) -> None:
-        """Verifica que a janela contém o label 'Nenhum save foi carregado'."""
+    def test_contem_label_nenhum_save_encontrado(self, qt_app: Any) -> None:
+        """Verifica que a janela contém o label 'Nenhum save encontrado'."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)
 
         labels = window.findChildren(QLabel)
 
-        assert len(labels) == 2
+        assert len(labels) == 4
 
         labels_text = [label.text() for label in labels]
 
-        assert "Nenhum save foi carregado" in labels_text
+        assert "Nenhum save encontrado" in labels_text
 
     def test_criacao_janela_nao_inicia_event_loop(self, qt_app: Any) -> None:
         """Verifica que create_main_window() não inicia o event loop automaticamente."""
