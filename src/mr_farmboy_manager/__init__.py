@@ -17,10 +17,22 @@ from mr_farmboy_manager.save_discovery import (
     discover_save_structure,
     format_sanitized_report,
 )
+from mr_farmboy_manager.godot_variant import (
+    GodotVariant,
+    GodotVariantKind,
+    GodotVariantLimitError,
+    GodotVariantParseError,
+    parse_godot_variant,
+)
 from mr_farmboy_manager.godot_tres import (
+    GodotTresDocument,
     GodotTresParseError,
     GodotTresProfile,
+    GodotTresProperty,
+    GodotTresSection,
+    GodotTresSectionKind,
     is_godot_tres_text,
+    parse_godot_tres_document,
     parse_godot_tres_structure,
 )
 from mr_farmboy_manager.save_snapshot import (
@@ -38,10 +50,21 @@ __all__ = [
     # save_snapshot
     "SnapshotResult",
     "create_save_snapshot",
+    # godot_variant
+    "GodotVariant",
+    "GodotVariantKind",
+    "GodotVariantLimitError",
+    "GodotVariantParseError",
+    "parse_godot_variant",
     # godot_tres
+    "GodotTresDocument",
     "GodotTresParseError",
     "GodotTresProfile",
+    "GodotTresProperty",
+    "GodotTresSection",
+    "GodotTresSectionKind",
     "is_godot_tres_text",
+    "parse_godot_tres_document",
     "parse_godot_tres_structure",
     # save_inspector
     "DetectedFormat",
