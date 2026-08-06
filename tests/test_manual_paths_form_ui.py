@@ -129,11 +129,11 @@ class TestFormularioVisualDeCaminhos:
 
         browse_save_button = window.findChild(QPushButton, "browse_save_path_button")
         assert browse_save_button is not None
-        assert browse_save_button.isEnabled() is False
+        assert browse_save_button.isEnabled()
 
         browse_install_button = window.findChild(QPushButton, "browse_game_install_button")
         assert browse_install_button is not None
-        assert browse_install_button.isEnabled() is False
+        assert browse_install_button.isEnabled()
 
     def test_botao_de_carregar_existe(self, qt_app: QApplication) -> None:
         """Teste que botão de carregar existe."""

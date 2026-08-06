@@ -102,7 +102,7 @@ def create_main_window(
 
     browse_save_path_button = QPushButton("Procurar...")
     browse_save_path_button.setObjectName("browse_save_path_button")
-    browse_save_path_button.setEnabled(False)
+    browse_save_path_button.setEnabled(True)
     manual_paths_layout.addWidget(browse_save_path_button)
 
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
@@ -120,7 +120,7 @@ def create_main_window(
 
     browse_game_install_button = QPushButton("Procurar...")
     browse_game_install_button.setObjectName("browse_game_install_button")
-    browse_game_install_button.setEnabled(False)
+    browse_game_install_button.setEnabled(True)
     manual_paths_layout.addWidget(browse_game_install_button)
 
     game_install_hint_label = QLabel("Possível caminho Steam: <biblioteca Steam>\\steamapps\\common\\MR FARMBOY")
