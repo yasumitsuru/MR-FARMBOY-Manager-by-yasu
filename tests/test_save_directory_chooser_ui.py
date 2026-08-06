@@ -193,15 +193,15 @@ class TestSaveDirectoryChooserUI:
 
         window.close()
 
-    def test_botao_carregar_saves_continua_desabilitado(self, qt_app: QApplication) -> None:
-        """Teste 9: botão Carregar saves continua desabilitado."""
+    def test_botao_carregar_saves_continua_habilitado(self, qt_app: QApplication) -> None:
+        """Teste 9: botão Carregar saves continua habilitado."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)
 
         load_saves_button = window.findChild(QPushButton, "load_saves_button")
         assert load_saves_button is not None
-        assert load_saves_button.isEnabled() is False
+        assert load_saves_button.isEnabled()
 
     def test_todos_parametros_anteriores_continuam_aceitos(self, qt_app: QApplication) -> None:
         """Teste 10: todos os parâmetros anteriores de create_main_window continuam aceitos."""

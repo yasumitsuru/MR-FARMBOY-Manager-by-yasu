@@ -193,12 +193,12 @@ class TestGameInstallDirectoryChooserUI:
 
         window.close()
 
-    def test_botao_load_saves_continua_desabilitado(self, qt_app: QApplication) -> None:
-        """Teste 9: botão load_saves_button continua desabilitado."""
+    def test_botao_load_saves_continua_habilitado(self, qt_app: QApplication) -> None:
+        """Teste 9: botão load_saves_button continua habilitado."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)
 
         load_saves_button = window.findChild(QPushButton, "load_saves_button")
         assert load_saves_button is not None
-        assert load_saves_button.isEnabled() is False
+        assert load_saves_button.isEnabled()
