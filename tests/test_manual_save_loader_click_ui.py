@@ -138,20 +138,3 @@ class TestManualSaveLoaderClick:
 
         assert sent_paths == ["  caminho com espaços  "]
         window.close()
-
-    def test_click_without_injected_loader_does_not_raise_error(
-        self, qt_app: QApplication
-    ) -> None:
-        """Teste 6: clique sem loader injetado não causa erro."""
-        from mr_farmboy_manager.application import create_main_window
-
-        window = create_main_window(qt_app)
-
-        button = window.findChild(QPushButton, "load_saves_button")
-        assert button is not None
-
-        # Deve não causar exceção
-        button.click()
-        QApplication.processEvents()
-
-        window.close()

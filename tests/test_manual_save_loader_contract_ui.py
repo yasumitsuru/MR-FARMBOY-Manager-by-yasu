@@ -59,26 +59,3 @@ class TestManualSaveLoaderContract:
         button = window.findChild(QPushButton, "load_saves_button")
         assert button is not None
         assert button.isEnabled()
-
-    def test_clicking_load_saves_button_does_not_call_loader(
-        self, qt_app: QApplication
-    ) -> None:
-        """Teste que clicar em load_saves_button ainda não chama o loader."""
-        from mr_farmboy_manager.application import create_main_window
-
-        call_count = 0
-
-        def loader() -> list:
-            nonlocal call_count
-            call_count += 1
-            return []
-
-        window = create_main_window(qt_app, manual_save_loader=loader)
-
-        button = window.findChild(QPushButton, "load_saves_button")
-        assert button is not None
-
-        # Simula clique no botão
-        button.click()
-
-        assert call_count == 0
