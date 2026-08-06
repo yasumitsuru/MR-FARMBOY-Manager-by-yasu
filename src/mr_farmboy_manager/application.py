@@ -181,6 +181,11 @@ def create_main_window(
             empty_label.setText("A pasta dos saves não existe.")
             return
 
+        if result.validation.code is DirectoryValidationCode.NOT_DIRECTORY:
+            render_save_slot_summaries(empty_label, save_slots_list, [])
+            empty_label.setText("O caminho dos saves não é uma pasta.")
+            return
+
         if not result.is_success:
             return
 
