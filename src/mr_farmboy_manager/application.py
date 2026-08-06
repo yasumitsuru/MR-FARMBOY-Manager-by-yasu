@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
 
 
@@ -49,6 +50,9 @@ def create_application() -> QApplication:
 SaveSlotsLoader = Callable[[], list[SaveSlotSummary]]
 
 
+ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
+
+
 SaveSlotSelectedCallback = Callable[[SaveSlotSummary], None] | None
 
 
@@ -58,6 +62,7 @@ def create_main_window(
     on_slot_selected: SaveSlotSelectedCallback = None,
     save_directory_chooser: DirectoryChooser | None = None,
     game_install_directory_chooser: DirectoryChooser | None = None,
+    manual_save_loader: ManualSaveLoader | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -156,7 +161,7 @@ def create_main_window(
     # Botão de ação futuro
     load_saves_button = QPushButton("Carregar saves")
     load_saves_button.setObjectName("load_saves_button")
-    load_saves_button.setEnabled(False)
+    load_saves_button.setEnabled(True)
     load_saves_button.setToolTip("O carregamento será habilitado após a integração com a validação de caminhos.")
     manual_paths_layout.addWidget(load_saves_button)
 

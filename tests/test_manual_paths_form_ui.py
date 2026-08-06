@@ -144,15 +144,15 @@ class TestFormularioVisualDeCaminhos:
         button = window.findChild(QPushButton, "load_saves_button")
         assert button is not None
 
-    def test_botao_de_carregar_comeca_desabilitado(self, qt_app: QApplication) -> None:
-        """Teste que botão de carregar começa desabilitado."""
+    def test_botao_de_carregar_comeca_habilitado(self, qt_app: QApplication) -> None:
+        """Teste que botão de carregar começa habilitado."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)
 
         button = window.findChild(QPushButton, "load_saves_button")
         assert button is not None
-        assert button.isEnabled() is False
+        assert button.isEnabled()
 
     def test_tooltip_do_botao_de_carregar_esta_correto(self, qt_app: QApplication) -> None:
         """Teste que tooltip do botão de carregar está correto."""
