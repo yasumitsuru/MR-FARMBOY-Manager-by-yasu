@@ -120,3 +120,39 @@ def inventory_tres_files(slot_path: Path) -> int:
                 count += 1
 
     return count
+
+
+@dataclass(frozen=True, slots=True)
+class SaveSlotSummary:
+    """Resumo de um slot de save.
+
+    Attributes:
+        slot: O objeto SaveSlot original.
+        tres_file_count: Número total de arquivos .tres no slot.
+    """
+
+    slot: SaveSlot
+    tres_file_count: int
+
+
+def build_save_slot_summaries(
+    base_path: Path | None = None,
+) -> list[SaveSlotSummary]:
+    """Constrói resumos para todos os slots de save descobertos.
+
+    Args:
+        base_path: Caminho base para busca. Se None, usa resolve_game_data_path().
+
+    Returns:
+        Lista ordenada numericamente de SaveSlotSummary.
+        Retorna lista vazia se nenhum slot for encontrado.
+    """
+    slots = discover_save_slots(base_path)
+
+    summaries: list[SaveSlotSummary] = []
+
+    for slot in slots:
+        tres_count = inventory_tres_files(slot.path)
+        summaries.append(SaveSlotSummary(slot=slot, tres_file_count=tres_count))
+
+    return summaries
