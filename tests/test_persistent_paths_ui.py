@@ -40,11 +40,14 @@ def _button(window, object_name: str) -> QPushButton:
     return result
 
 
-def test_injected_store_restores_paths_once_without_loading_manual_saves(
+def test_injected_store_restores_paths_once_and_loads_a_restored_save_path(
     qt_app: QApplication, tmp_path: Path
 ) -> None:
-    """A missing load call would leave the persisted paths out of the form."""
+    """A restored save directory is loaded once when the window opens."""
     from mr_farmboy_manager.application import create_main_window
+
+    save_directory = tmp_path / "saves"
+    save_directory.mkdir()
 
     class CountingStore:
         def __init__(self) -> None:
@@ -52,7 +55,7 @@ def test_injected_store_restores_paths_once_without_loading_manual_saves(
 
         def load(self) -> AppSettings:
             self.load_calls += 1
-            return AppSettings("save-value", "game-value")
+            return AppSettings(str(save_directory), "game-value")
 
         def save(self, settings: AppSettings) -> None:
             raise AssertionError("creating the window must not save settings")
@@ -62,7 +65,12 @@ def test_injected_store_restores_paths_once_without_loading_manual_saves(
     def manual_loader(_path: str) -> SaveSlotsLoadResult:
         nonlocal manual_loader_calls
         manual_loader_calls += 1
-        raise AssertionError("creating the window must not load manual saves")
+        return SaveSlotsLoadResult(
+            validation=DirectoryValidationResult(
+                DirectoryValidationCode.VALID, save_directory
+            ),
+            summaries=(),
+        )
 
     store = CountingStore()
     window = create_main_window(
@@ -73,9 +81,9 @@ def test_injected_store_restores_paths_once_without_loading_manual_saves(
     )
 
     assert store.load_calls == 1
-    assert _input(window, "save_path_input").text() == "save-value"
+    assert _input(window, "save_path_input").text() == str(save_directory)
     assert _input(window, "game_install_path_input").text() == "game-value"
-    assert manual_loader_calls == 0
+    assert manual_loader_calls == 1
 
 
 def test_no_store_keeps_both_path_fields_empty(

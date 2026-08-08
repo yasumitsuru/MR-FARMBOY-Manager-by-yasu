@@ -117,6 +117,11 @@ def create_main_window(
     save_path_input.setPlaceholderText("Selecione ou informe a pasta dos saves")
     manual_paths_layout.addWidget(save_path_input)
 
+    save_path_status_label = QLabel()
+    save_path_status_label.setObjectName("save_path_status_label")
+    save_path_status_label.setWordWrap(True)
+    manual_paths_layout.addWidget(save_path_status_label)
+
     browse_save_path_button = QPushButton("Procurar...")
     browse_save_path_button.setObjectName("browse_save_path_button")
     browse_save_path_button.setEnabled(True)
@@ -128,6 +133,7 @@ def create_main_window(
 
             if selected is not None:
                 save_path_input.setText(str(selected))
+                update_save_path_status(save_path_input.text())
                 persist_save_directory_if_valid(save_path_input.text())
 
             return
@@ -140,13 +146,10 @@ def create_main_window(
 
         if selected_path:
             save_path_input.setText(selected_path)
+            update_save_path_status(save_path_input.text())
             persist_save_directory_if_valid(save_path_input.text())
 
     browse_save_path_button.clicked.connect(choose_save_directory)
-    save_path_input.editingFinished.connect(
-        lambda: persist_save_directory_if_valid(save_path_input.text())
-    )
-
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
     save_path_hint_label.setObjectName("save_path_hint_label")
     manual_paths_layout.addWidget(save_path_hint_label)
@@ -160,11 +163,50 @@ def create_main_window(
     game_install_path_input.setPlaceholderText("Selecione ou informe a pasta de instalação")
     manual_paths_layout.addWidget(game_install_path_input)
 
+    game_install_path_status_label = QLabel()
+    game_install_path_status_label.setObjectName("game_install_path_status_label")
+    game_install_path_status_label.setWordWrap(True)
+    manual_paths_layout.addWidget(game_install_path_status_label)
+
     current_settings = (
         settings_store.load() if settings_store is not None else AppSettings()
     )
     save_path_input.setText(current_settings.save_directory)
     game_install_path_input.setText(current_settings.game_install_directory)
+
+    def status_text_for_directory(
+        value: str, description: str, empty_text: str
+    ) -> str:
+        validation = validate_directory_path(value)
+        messages = {
+            DirectoryValidationCode.EMPTY: empty_text,
+            DirectoryValidationCode.VALID: f"{description} válida.",
+            DirectoryValidationCode.NOT_FOUND: (
+                f"A {description.lower()} não existe. Corrija o caminho ou selecione uma pasta existente."
+            ),
+            DirectoryValidationCode.NOT_DIRECTORY: (
+                f"O caminho da {description.lower()} não é uma pasta. Corrija o caminho."
+            ),
+        }
+        return messages[validation.code]
+
+    def update_save_path_status(value: str) -> None:
+        save_path_status_label.setText(
+            status_text_for_directory(
+                value,
+                "Pasta dos saves",
+                "Nenhuma pasta dos saves configurada.",
+            )
+        )
+
+    def update_game_install_path_status(value: str) -> None:
+        game_install_path_status_label.setText(
+            status_text_for_directory(
+                value,
+                "Pasta de instalação do jogo",
+                "Nenhuma pasta de instalação do jogo configurada.",
+            )
+        )
 
     def persist_save_directory_if_valid(value: str) -> None:
         nonlocal current_settings
@@ -190,6 +232,16 @@ def create_main_window(
         )
         settings_store.save(current_settings)
 
+    def on_save_path_editing_finished() -> None:
+        update_save_path_status(save_path_input.text())
+        persist_save_directory_if_valid(save_path_input.text())
+
+    def on_game_install_path_editing_finished() -> None:
+        update_game_install_path_status(game_install_path_input.text())
+        persist_game_install_directory_if_valid(game_install_path_input.text())
+
+    save_path_input.editingFinished.connect(on_save_path_editing_finished)
+
     browse_game_install_button = QPushButton("Procurar...")
     browse_game_install_button.setObjectName("browse_game_install_button")
     browse_game_install_button.setEnabled(True)
@@ -201,6 +253,7 @@ def create_main_window(
 
             if selected is not None:
                 game_install_path_input.setText(str(selected))
+                update_game_install_path_status(game_install_path_input.text())
                 persist_game_install_directory_if_valid(game_install_path_input.text())
 
             return
@@ -213,14 +266,11 @@ def create_main_window(
 
         if selected_path:
             game_install_path_input.setText(selected_path)
+            update_game_install_path_status(game_install_path_input.text())
             persist_game_install_directory_if_valid(game_install_path_input.text())
 
     browse_game_install_button.clicked.connect(choose_game_install_directory)
-    game_install_path_input.editingFinished.connect(
-        lambda: persist_game_install_directory_if_valid(
-            game_install_path_input.text()
-        )
-    )
+    game_install_path_input.editingFinished.connect(on_game_install_path_editing_finished)
 
     game_install_hint_label = QLabel("Possível caminho Steam: <biblioteca Steam>\\steamapps\\common\\MR FARMBOY")
     game_install_hint_label.setObjectName("game_install_hint_label")
@@ -321,6 +371,23 @@ def create_main_window(
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
+    update_save_path_status(save_path_input.text())
+    update_game_install_path_status(game_install_path_input.text())
+
+    if current_settings.save_directory:
+        restored_save_path = current_settings.save_directory
+        restored_validation = validate_directory_path(restored_save_path)
+        restored_result = load_manual_summaries(restored_save_path)
+        effective_restored_result = (
+            restored_result
+            if restored_validation.is_valid
+            else SaveSlotsLoadResult(restored_validation, ())
+        )
+        if (
+            apply_manual_load_result(effective_restored_result)
+            and restored_validation.is_valid
+        ):
+            active_manual_save_path = restored_save_path
 
     def refresh_save_slots() -> None:
         if active_manual_save_path is None:
