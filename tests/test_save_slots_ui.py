@@ -399,19 +399,18 @@ class TestSaveSlotsUI:
         assert received_summary is not None
         assert received_summary is original_summary
 
-    def test_absencia_de_callback_nao_causa_erro(self, qt_app: QApplication) -> None:
+    def test_absencia_de_callback_nao_causa_erro(
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
         """Teste que ausência de callback não causa erro."""
         from mr_farmboy_manager.application import create_main_window
-        from mr_farmboy_manager.save_slots import SaveSlot, SaveSlotSummary
-
-        slot = SaveSlot(number=1, path=Path("save_1"))
-        summary = SaveSlotSummary(slot=slot, tres_file_count=4)
-
-        def loader() -> list:
-            return [summary]
 
         # Chama sem on_slot_selected
-        window = create_main_window(qt_app, loader=loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app)
 
         assert window is not None
 
