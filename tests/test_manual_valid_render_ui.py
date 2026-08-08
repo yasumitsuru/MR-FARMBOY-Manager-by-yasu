@@ -27,7 +27,10 @@ class TestManualValidRenderUI:
     """Testes de renderização de carregamento manual válido."""
 
     def test_valid_com_um_resumo_renderiza_exatamente_um_item(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que VALID com um resumo renderiza exatamente um item."""
         from mr_farmboy_manager.application import create_main_window
@@ -35,15 +38,14 @@ class TestManualValidRenderUI:
         slot = SaveSlot(number=1, path=Path("save_1"))
         summary = SaveSlotSummary(slot=slot, tres_file_count=4)
 
-        loader = lambda: []
-
         def manual_loader(path: str) -> SaveSlotsLoadResult:
             return SaveSlotsLoadResult(
                 validation=DirectoryValidationResult(code=DirectoryValidationCode.VALID, path=None),
                 summaries=(summary,),
             )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
