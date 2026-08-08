@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QFileDialog,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult, DirectoryValidationCode, load_save_slot_summaries
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
@@ -184,34 +184,22 @@ def create_main_window(
     load_saves_button.setToolTip("O carregamento será habilitado após a integração com a validação de caminhos.")
     manual_paths_layout.addWidget(load_saves_button)
 
-    def on_load_saves_clicked() -> None:
-        nonlocal _summaries_for_selection
+    active_manual_save_path: str | None = None
 
+    def load_manual_summaries(path: str) -> SaveSlotsLoadResult:
         if manual_save_loader is not None:
-            result = manual_save_loader(save_path_input.text())
-        else:
-            result = load_save_slot_summaries(save_path_input.text())
+            return manual_save_loader(path)
 
-        if result.validation.code is DirectoryValidationCode.EMPTY:
-            render_save_slot_summaries(empty_label, save_slots_list, [])
-            empty_label.setText("Informe a pasta dos saves.")
-            return
+        return load_save_slot_summaries(path)
 
-        if result.validation.code is DirectoryValidationCode.NOT_FOUND:
-            render_save_slot_summaries(empty_label, save_slots_list, [])
-            empty_label.setText("A pasta dos saves não existe.")
-            return
+    def on_load_saves_clicked() -> None:
+        nonlocal active_manual_save_path
 
-        if result.validation.code is DirectoryValidationCode.NOT_DIRECTORY:
-            render_save_slot_summaries(empty_label, save_slots_list, [])
-            empty_label.setText("O caminho dos saves não é uma pasta.")
-            return
+        requested_path = save_path_input.text()
+        result = load_manual_summaries(requested_path)
 
-        if not result.is_success:
-            return
-
-        _summaries_for_selection = list(result.summaries)
-        render_save_slot_summaries(empty_label, save_slots_list, _summaries_for_selection)
+        if apply_manual_load_result(result):
+            active_manual_save_path = requested_path
 
     load_saves_button.clicked.connect(on_load_saves_clicked)
 
@@ -238,13 +226,39 @@ def create_main_window(
     layout.addWidget(save_slots_group)
 
     # Carrega os resumos dos slots
-    if loader is None:
-        summaries = build_save_slot_summaries()
-    else:
-        summaries = loader()
+    save_slots_loader = loader if loader is not None else build_save_slot_summaries
+    summaries = save_slots_loader()
 
     # Armazena a lista de resumos para mapeamento com os itens da lista
     _summaries_for_selection: list[SaveSlotSummary] = summaries
+
+    def replace_save_slot_summaries(new_summaries: list[SaveSlotSummary]) -> None:
+        """Substitui os resumos renderizados e usados pela selecao."""
+        nonlocal _summaries_for_selection
+
+        _summaries_for_selection = new_summaries
+        render_save_slot_summaries(empty_label, save_slots_list, new_summaries)
+
+    def apply_manual_load_result(result: SaveSlotsLoadResult) -> bool:
+        """Aplica um resultado manual e informa se ele e valido."""
+        error_messages = {
+            DirectoryValidationCode.EMPTY: "Informe a pasta dos saves.",
+            DirectoryValidationCode.NOT_FOUND: "A pasta dos saves não existe.",
+            DirectoryValidationCode.NOT_DIRECTORY: "O caminho dos saves não é uma pasta.",
+        }
+        error_message = error_messages.get(result.validation.code)
+
+        if error_message is not None:
+            replace_save_slot_summaries([])
+            empty_label.setText(error_message)
+            return False
+
+        if not result.is_success:
+            return False
+
+        empty_label.setText("Nenhum save encontrado")
+        replace_save_slot_summaries(list(result.summaries))
+        return True
 
     def on_item_selected():
         """Callback chamado quando um item é selecionado."""
@@ -257,6 +271,20 @@ def create_main_window(
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
+
+    def refresh_save_slots() -> None:
+        if active_manual_save_path is None:
+            replace_save_slot_summaries(save_slots_loader())
+            return
+
+        result = load_manual_summaries(active_manual_save_path)
+        apply_manual_load_result(result)
+
+    auto_refresh_timer = QTimer(window)
+    auto_refresh_timer.setObjectName("save_auto_refresh_timer")
+    auto_refresh_timer.setInterval(300_000)
+    auto_refresh_timer.timeout.connect(refresh_save_slots)
+    auto_refresh_timer.start()
 
     return window
 
