@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from datetime import timezone
 from pathlib import Path
 
 DirectoryChooser = Callable[[], Path | None]
@@ -20,8 +21,10 @@ from PySide6.QtWidgets import (
     QPushButton,
     QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
     QFileDialog,
 )
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import Qt, QTimer
 
 from mr_farmboy_manager.manual_paths import (
@@ -31,6 +34,7 @@ from mr_farmboy_manager.manual_paths import (
     validate_directory_path,
 )
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
+from mr_farmboy_manager.save_details import SaveSlotDetails, inspect_save_slot
 from mr_farmboy_manager.settings import AppSettings, QtSettingsStore, SettingsStore
 
 
@@ -56,11 +60,85 @@ def create_application() -> QApplication:
 
 SaveSlotsLoader = Callable[[], list[SaveSlotSummary]]
 
+SaveDetailsLoader = Callable[[SaveSlotSummary], SaveSlotDetails]
+
 
 ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
 
 
 SaveSlotSelectedCallback = Callable[[SaveSlotSummary], None] | None
+
+
+def format_save_slot_details(details: SaveSlotDetails) -> str:
+    """Formata detalhes já inspecionados sem interpretar arquivos de save."""
+    unavailable = "não disponível"
+    modified = (
+        details.latest_modified_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        if details.latest_modified_at is not None
+        else unavailable
+    )
+    failures = ", ".join(Path(name).name for name in details.failed_files) or "nenhuma"
+    player = details.player_progress
+    crops = details.crop_progress
+
+    def value(item: object | None) -> str:
+        return unavailable if item is None else str(item)
+
+    lines = [
+        "FICHA DO SLOT",
+        f"Slot {details.summary.slot.number}",
+        f"Caminho: {details.summary.slot.path}",
+        f"Última modificação (UTC): {modified}",
+        "",
+        "ARQUIVOS ANALISADOS",
+        f"Total .tres no slot: {details.summary.tres_file_count}",
+        f"Arquivos principais analisados: {details.inspected_file_count}",
+        f"Falhas: {failures}",
+        f"Propriedades estruturadas: {details.total_property_count}",
+        "",
+        "PLAYER",
+    ]
+    if player is None:
+        lines.append("Dados do player: não disponíveis")
+    else:
+        lines.extend(
+            (
+                f"Tutorial: {value(player.tutorial_stage)}",
+                f"Modo do jogo (código): {value(player.game_mode_code)}",
+                f"Ilha (código): {value(player.island_id)}",
+                f"Destaques desbloqueados: {value(player.highlighted_unlock_count)}",
+                f"Endless desbloqueados: {value(player.endless_unlock_count)}",
+                f"Grupos de progresso: {value(player.advancement_group_count)}",
+            )
+        )
+    lines.extend(("", "CULTIVOS"))
+    if crops is None:
+        lines.append("Dados de cultivos: indisponíveis")
+    else:
+        growth_states = (
+            ", ".join(f"{code}: {count}" for code, count in crops.growth_state_counts)
+            or unavailable
+        )
+        lines.extend(
+            (
+                f"Registros: {crops.record_count}",
+                f"Plantados: {crops.planted_count}",
+                f"Regados: {crops.watered_count}",
+                f"Fertilizados: {crops.fertilized_count}",
+                f"Maduros: {crops.matured_count}",
+                f"Colhíveis: {crops.harvestable_count}",
+                f"Mortos: {crops.dead_count}",
+                f"Estados de crescimento: {growth_states}",
+            )
+        )
+    lines.extend(
+        (
+            "",
+            "Dados financeiros: não encontrados no schema analisado.",
+            "Inventário detalhado: indisponível (formato opaco).",
+        )
+    )
+    return "\n".join(lines)
 
 
 def create_main_window(
@@ -71,6 +149,7 @@ def create_main_window(
     game_install_directory_chooser: DirectoryChooser | None = None,
     manual_save_loader: ManualSaveLoader | None = None,
     settings_store: SettingsStore | None = None,
+    save_details_loader: SaveDetailsLoader | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -311,19 +390,43 @@ def create_main_window(
     save_slots_group = QGroupBox("Slots de Save")
     save_slots_group.setObjectName("save_slots_group")
 
-    save_slots_layout = QVBoxLayout()
+    save_slots_layout = QHBoxLayout()
     save_slots_group.setLayout(save_slots_layout)
+
+    save_slots_list_layout = QVBoxLayout()
+    save_slots_layout.addLayout(save_slots_list_layout)
 
     empty_label = QLabel("Nenhum save encontrado")
     empty_label.setObjectName("empty_save_slots_label")
     empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     empty_label.hide()
-    save_slots_layout.addWidget(empty_label)
+    save_slots_list_layout.addWidget(empty_label)
 
     save_slots_list = QListWidget()
     save_slots_list.setObjectName("save_slots_list")
     save_slots_list.hide()
-    save_slots_layout.addWidget(save_slots_list)
+    save_slots_list_layout.addWidget(save_slots_list)
+
+    save_slot_details_group = QGroupBox("Detalhes do slot")
+    save_slot_details_group.setObjectName("save_slot_details_group")
+    save_slot_details_layout = QVBoxLayout(save_slot_details_group)
+
+    save_slot_details_status_label = QLabel("Selecione um slot para consultar os detalhes.")
+    save_slot_details_status_label.setObjectName("save_slot_details_status_label")
+    save_slot_details_status_label.setWordWrap(True)
+    save_slot_details_layout.addWidget(save_slot_details_status_label)
+
+    save_slot_details_view = QPlainTextEdit()
+    save_slot_details_view.setObjectName("save_slot_details_view")
+    save_slot_details_view.setReadOnly(True)
+    save_slot_details_view.setFont(
+        QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+    )
+    save_slot_details_view.setMinimumHeight(190)
+    save_slot_details_view.setMaximumHeight(220)
+    save_slot_details_view.setPlainText("Selecione um slot para consultar os detalhes.")
+    save_slot_details_layout.addWidget(save_slot_details_view)
+    save_slots_layout.addWidget(save_slot_details_group)
 
     layout.addWidget(save_slots_group)
 
@@ -333,12 +436,22 @@ def create_main_window(
 
     # Armazena a lista de resumos para mapeamento com os itens da lista
     _summaries_for_selection: list[SaveSlotSummary] = summaries
+    details_loader = save_details_loader if save_details_loader is not None else inspect_save_slot
+
+    def reset_save_slot_details() -> None:
+        save_slot_details_status_label.setText(
+            "Selecione um slot para consultar os detalhes."
+        )
+        save_slot_details_view.setPlainText(
+            "Selecione um slot para consultar os detalhes."
+        )
 
     def replace_save_slot_summaries(new_summaries: list[SaveSlotSummary]) -> None:
         """Substitui os resumos renderizados e usados pela selecao."""
         nonlocal _summaries_for_selection
 
         _summaries_for_selection = new_summaries
+        reset_save_slot_details()
         render_save_slot_summaries(empty_label, save_slots_list, new_summaries)
 
     def apply_manual_load_result(result: SaveSlotsLoadResult) -> bool:
@@ -362,13 +475,30 @@ def create_main_window(
         replace_save_slot_summaries(list(result.summaries))
         return True
 
-    def on_item_selected():
+    def on_item_selected() -> None:
         """Callback chamado quando um item é selecionado."""
         current_row = save_slots_list.currentRow()
         if current_row >= 0 and current_row < len(_summaries_for_selection):
             summary = _summaries_for_selection[current_row]
             if on_slot_selected is not None:
                 on_slot_selected(summary)
+            try:
+                details = details_loader(summary)
+                rendered_details = format_save_slot_details(details)
+            except Exception:
+                save_slot_details_status_label.setText(
+                    "Não foi possível carregar os detalhes. Tente novamente com o jogo fechado."
+                )
+                save_slot_details_view.setPlainText(
+                    "Detalhes indisponíveis. Tente novamente com o jogo fechado."
+                )
+                return
+
+            save_slot_details_status_label.setText("Detalhes carregados.")
+            save_slot_details_view.setPlainText(rendered_details)
+            return
+
+        reset_save_slot_details()
 
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
 
