@@ -134,7 +134,10 @@ class TestSaveSlotsRenderReplacementUI:
         assert label.isHidden() is False
 
     def test_novo_resultado_nao_acumula_itens(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que novo resultado não acumula itens."""
         from mr_farmboy_manager.application import create_main_window
@@ -142,9 +145,6 @@ class TestSaveSlotsRenderReplacementUI:
         slot1 = SaveSlot(number=1, path=Path("save_1"))
         slot2 = SaveSlot(number=2, path=Path("save_2"))
         slot3 = SaveSlot(number=3, path=Path("save_3"))
-
-        def loader() -> list[SaveSlotSummary]:
-            return []
 
         call_count = 0
         def manual_loader(path: str) -> SaveSlotsLoadResult:
@@ -166,7 +166,8 @@ class TestSaveSlotsRenderReplacementUI:
                     summaries=(SaveSlotSummary(slot=slot3, tres_file_count=9),),
                 )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
