@@ -63,7 +63,10 @@ class TestManualValidRenderUI:
         assert label.isVisible() is False
 
     def test_valid_com_dois_resumos_preserva_ordem(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que VALID com dois resumos preserva a ordem."""
         from mr_farmboy_manager.application import create_main_window
@@ -73,15 +76,14 @@ class TestManualValidRenderUI:
         summary1 = SaveSlotSummary(slot=slot1, tres_file_count=4)
         summary2 = SaveSlotSummary(slot=slot2, tres_file_count=7)
 
-        loader = lambda: []
-
         def manual_loader(path: str) -> SaveSlotsLoadResult:
             return SaveSlotsLoadResult(
                 validation=DirectoryValidationResult(code=DirectoryValidationCode.VALID, path=None),
                 summaries=(summary1, summary2),
             )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
