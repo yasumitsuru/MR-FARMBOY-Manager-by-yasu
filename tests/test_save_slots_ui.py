@@ -18,14 +18,17 @@ def qt_app() -> QApplication:
 class TestSaveSlotsUI:
     """Testes da interface de slots de save."""
 
-    def test_janela_criada_com_loader_vazio(self, qt_app: QApplication) -> None:
-        """Teste que janela é criada com loader vazio."""
+    def test_janela_criada_sem_loader_injetado(
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Teste que janela é criada sem loader injetado."""
         from mr_farmboy_manager.application import create_main_window
 
-        def empty_loader() -> list:
-            return []
-
-        window = create_main_window(qt_app, loader=empty_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app)
         assert isinstance(window, QMainWindow)
 
     def test_loader_chamado_exatamente_uma_vez(self, qt_app: QApplication) -> None:
