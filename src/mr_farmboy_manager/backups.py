@@ -10,6 +10,7 @@ import secrets
 import shutil
 import stat
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -46,6 +47,14 @@ class BackupErrorCode(str, Enum):
     PUBLISH_FAILED = "publish_failed"
     CLEANUP_FAILED = "cleanup_failed"
     DISCOVERY_FAILED = "discovery_failed"
+    RESTORE_NOT_CONFIRMED = "restore_not_confirmed"
+    RESTORE_BACKUP_NOT_FOUND = "restore_backup_not_found"
+    RESTORE_BACKUP_INVALID = "restore_backup_invalid"
+    RESTORE_PREVENTIVE_BACKUP_FAILED = "restore_preventive_backup_failed"
+    RESTORE_STAGING_FAILED = "restore_staging_failed"
+    RESTORE_PUBLISH_FAILED = "restore_publish_failed"
+    RESTORE_ROLLBACK_FAILED = "restore_rollback_failed"
+    RESTORE_CLEANUP_PENDING = "restore_cleanup_pending"
 
 
 class BackupValidationError(ValueError):
@@ -135,6 +144,27 @@ class BackupDiscoveryResult:
     @property
     def is_success(self) -> bool:
         return self.error_code is None
+
+
+@dataclass(frozen=True, slots=True)
+class BackupRestoreResult:
+    """Resultado sanitizado de uma restauração confirmada."""
+
+    restored_backup: BackupRecord | None
+    preventive_backup: BackupRecord | None
+    error_code: BackupErrorCode | None
+    public_message: str
+    cleanup_pending: bool = False
+
+    @property
+    def is_success(self) -> bool:
+        return self.restored_backup is not None and self.error_code in {
+            None,
+            BackupErrorCode.RESTORE_CLEANUP_PENDING,
+        }
+
+
+PreventiveBackupCreator = Callable[[SaveSlot, Path | str, Path | str], BackupCreationResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,7 +527,566 @@ def discover_backups(backup_root: Path | str) -> BackupDiscoveryResult:
         )
 
 
+def restore_backup(
+    slot: SaveSlot,
+    active_save_root: Path | str,
+    backup_root: Path | str,
+    backup_id: str,
+    *,
+    confirmed: bool,
+    preventive_backup_creator: PreventiveBackupCreator | None = None,
+) -> BackupRestoreResult:
+    """Restaura um backup validado por staging, troca e rollback."""
+    if confirmed is not True:
+        return BackupRestoreResult(
+            None,
+            None,
+            BackupErrorCode.RESTORE_NOT_CONFIRMED,
+            "A restauração não foi confirmada.",
+        )
+
+    staging: Path | None = None
+    rollback: Path | None = None
+    active_root_chain: tuple[_PathIdentity, ...] = ()
+    staging_identity: os.stat_result | None = None
+    preventive_record: BackupRecord | None = None
+    preserve_partial_state = False
+
+    try:
+        parsed_slot, _parsed_timestamp = _parse_backup_id(backup_id)
+        if parsed_slot != slot.number:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_BACKUP_INVALID,
+                "O backup selecionado não pertence ao slot de destino.",
+            )
+
+        _reject_existing_reparse_components(
+            slot.path,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "O destino da restauração não é seguro.",
+        )
+        _reject_existing_reparse_components(
+            active_save_root,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta ativa de saves não é segura.",
+        )
+        _reject_existing_reparse_components(
+            backup_root,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta de backups não é segura.",
+        )
+        active_initial_chain = _capture_existing_directory_chain(
+            active_save_root,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta ativa de saves não é segura.",
+        )
+        backup_initial_chain = _capture_existing_directory_chain(
+            backup_root,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta de backups não é segura.",
+        )
+        location = resolve_backup_destination(
+            slot,
+            active_save_root,
+            backup_root,
+            backup_id,
+        )
+        _assert_directory_chain(
+            active_initial_chain,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta ativa de saves mudou durante a restauração.",
+        )
+        _assert_directory_chain(
+            backup_initial_chain,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta de backups mudou durante a restauração.",
+        )
+
+        active_root = location.active_save_root
+        root = location.backup_root
+        active_root_state = os.lstat(active_root)
+        root_state = os.lstat(root)
+        if (
+            not stat.S_ISDIR(active_root_state.st_mode)
+            or _has_reparse_attribute(active_root_state)
+            or not stat.S_ISDIR(root_state.st_mode)
+            or _has_reparse_attribute(root_state)
+        ):
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_BACKUP_INVALID,
+                "A origem ou o destino da restauração não é seguro.",
+            )
+
+        active_root_chain = _capture_directory_chain(active_root)
+        backup_root_chain = _capture_directory_chain(root)
+        active_slot_state = os.lstat(location.source)
+        if (
+            not stat.S_ISDIR(active_slot_state.st_mode)
+            or _has_reparse_attribute(active_slot_state)
+        ):
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_BACKUP_INVALID,
+                "O destino da restauração não é seguro.",
+            )
+        active_entries = _inventory_source_slot(location.source)
+        selected_record, selected_manifest = _load_validated_backup_for_restore(
+            root,
+            location.destination,
+            slot.number,
+        )
+
+        creator = (
+            preventive_backup_creator
+            if preventive_backup_creator is not None
+            else create_backup
+        )
+        try:
+            preventive_result = creator(slot, active_root, root)
+        except Exception as error:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_PREVENTIVE_BACKUP_FAILED,
+                "Não foi possível criar o backup preventivo.",
+            ) from error
+        if not preventive_result.is_success or preventive_result.backup is None:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_PREVENTIVE_BACKUP_FAILED,
+                "Não foi possível criar o backup preventivo.",
+            )
+        preventive_record = preventive_result.backup
+
+        _assert_directory_chain(
+            active_root_chain,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta ativa de saves mudou durante a restauração.",
+        )
+        _assert_directory_chain(
+            backup_root_chain,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "A pasta de backups mudou durante a restauração.",
+        )
+        current_record, current_manifest = _load_validated_backup_for_restore(
+            root,
+            location.destination,
+            slot.number,
+        )
+        if current_record != selected_record or current_manifest != selected_manifest:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_BACKUP_INVALID,
+                "O backup selecionado mudou durante a restauração.",
+            )
+
+        token = secrets.token_hex(16)
+        staging_candidate = (
+            active_root / f".restore-staging-save_{slot.number}-{token}"
+        )
+        rollback = active_root / f".restore-old-save_{slot.number}-{token}"
+        if os.path.lexists(staging_candidate) or os.path.lexists(rollback):
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_STAGING_FAILED,
+                "Não foi possível preparar a restauração.",
+            )
+        _assert_directory_chain(active_root_chain)
+        staging_candidate.mkdir(exist_ok=False)
+        staging = staging_candidate
+        staging_identity = os.lstat(staging)
+        _copy_backup_payload_to_staging(
+            current_record.destination / BACKUP_PAYLOAD_DIRECTORY,
+            staging,
+            current_manifest,
+        )
+
+        _assert_directory_chain(
+            active_root_chain,
+            BackupErrorCode.RESTORE_PUBLISH_FAILED,
+            "A pasta ativa de saves mudou durante a restauração.",
+        )
+        if (
+            not _same_stat_identity(os.lstat(location.source), active_slot_state)
+            or _inventory_source_slot(location.source) != active_entries
+        ):
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_PUBLISH_FAILED,
+                "O save ativo mudou durante a restauração. Feche o jogo e tente novamente.",
+            )
+        final_record, final_manifest = _load_validated_backup_for_restore(
+            root,
+            location.destination,
+            slot.number,
+        )
+        if final_record != current_record or final_manifest != current_manifest:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_BACKUP_INVALID,
+                "O backup selecionado mudou durante a restauração.",
+            )
+
+        _publish_restored_slot(
+            location.source,
+            staging,
+            rollback,
+            current_manifest,
+            active_root_chain,
+            active_slot_state,
+            active_entries,
+        )
+        staging = None
+
+        try:
+            _remove_restore_directory(
+                rollback,
+                active_root,
+                active_root_chain,
+                active_slot_state,
+            )
+        except (OSError, _BackupOperationFailure):
+            return BackupRestoreResult(
+                current_record,
+                preventive_record,
+                BackupErrorCode.RESTORE_CLEANUP_PENDING,
+                "O backup foi restaurado, mas uma limpeza temporária ficou pendente.",
+                cleanup_pending=True,
+            )
+        rollback = None
+        return BackupRestoreResult(
+            current_record,
+            preventive_record,
+            None,
+            f"Backup restaurado com sucesso: {current_record.backup_id}.",
+        )
+    except BackupValidationError as error:
+        result = BackupRestoreResult(
+            None,
+            preventive_record,
+            error.code,
+            error.public_message,
+        )
+    except _BackupOperationFailure as error:
+        preserve_partial_state = error.code is BackupErrorCode.RESTORE_ROLLBACK_FAILED
+        result = BackupRestoreResult(
+            None,
+            preventive_record,
+            error.code,
+            error.public_message,
+        )
+    except (OSError, TypeError, ValueError):
+        result = BackupRestoreResult(
+            None,
+            preventive_record,
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "Não foi possível validar a restauração.",
+        )
+
+    if (
+        staging is not None
+        and os.path.lexists(staging)
+        and not preserve_partial_state
+    ):
+        try:
+            active_root = staging.parent
+            if staging_identity is None:
+                raise OSError
+            _remove_restore_directory(
+                staging,
+                active_root,
+                active_root_chain,
+                staging_identity,
+            )
+        except (OSError, _BackupOperationFailure):
+            return BackupRestoreResult(
+                None,
+                preventive_record,
+                BackupErrorCode.RESTORE_CLEANUP_PENDING,
+                "A restauração foi cancelada, mas uma limpeza temporária ficou pendente.",
+                cleanup_pending=True,
+            )
+    return result
+
+
+def _load_validated_backup_for_restore(
+    root: Path,
+    destination: Path,
+    expected_slot_number: int,
+) -> tuple[BackupRecord, BackupManifest]:
+    if destination.parent != root or not os.path.lexists(destination):
+        raise _BackupOperationFailure(
+            BackupErrorCode.RESTORE_BACKUP_NOT_FOUND,
+            "O backup selecionado não existe.",
+        )
+    try:
+        record, manifest = _read_backup_record_and_manifest(root, destination)
+        if record.slot_number != expected_slot_number:
+            raise ValueError
+        _validate_payload_against_manifest(
+            destination / BACKUP_PAYLOAD_DIRECTORY,
+            manifest,
+        )
+        return record, manifest
+    except (
+        BackupValidationError,
+        _BackupOperationFailure,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.RESTORE_BACKUP_INVALID,
+            "O backup selecionado está inválido ou incompleto.",
+        ) from error
+
+
+def _validate_payload_against_manifest(
+    payload: Path,
+    manifest: BackupManifest,
+) -> None:
+    entries = _inventory_source_slot(payload)
+    files = {
+        entry.relative_path: entry
+        for entry in entries
+        if not entry.is_directory
+    }
+    if set(files) != {record.relative_path for record in manifest.files}:
+        raise ValueError
+    for record in manifest.files:
+        entry = files[record.relative_path]
+        if (
+            entry.size_bytes != record.size_bytes
+            or entry.modified_at_ns != record.modified_at_ns
+            or _sha256_source_entry(payload / Path(record.relative_path), entry)
+            != record.sha256
+        ):
+            raise ValueError
+
+
+def _sha256_source_entry(path: Path, expected: _SourceEntry) -> str:
+    opened: _OpenedSource | None = None
+    try:
+        before = os.lstat(path)
+        if _source_entry(expected.relative_path, before) != expected:
+            raise ValueError
+        opened = _open_source_descriptor(path, expected)
+        digest = hashlib.sha256()
+        while chunk := os.read(opened.descriptor, _COPY_CHUNK_SIZE):
+            digest.update(chunk)
+        if (
+            _source_entry(expected.relative_path, os.lstat(path)) != expected
+            or _source_entry(expected.relative_path, os.fstat(opened.descriptor))
+            != expected
+        ):
+            raise ValueError
+        _verify_windows_source_state(opened)
+        return digest.hexdigest()
+    finally:
+        if opened is not None:
+            os.close(opened.descriptor)
+
+
+def _copy_backup_payload_to_staging(
+    payload: Path,
+    staging: Path,
+    manifest: BackupManifest,
+) -> None:
+    try:
+        entries = _inventory_source_slot(payload)
+        staging_chain = _capture_directory_chain(staging)
+        for entry in (item for item in entries if item.is_directory):
+            destination = staging / Path(entry.relative_path)
+            _assert_directory_chain(staging_chain)
+            _assert_directory_chain(_capture_directory_chain(destination.parent))
+            destination.mkdir(exist_ok=False)
+
+        copied = tuple(
+            _copy_regular_file(
+                payload / Path(entry.relative_path),
+                staging / Path(entry.relative_path),
+                entry,
+                staging_chain,
+            )
+            for entry in entries
+            if not entry.is_directory
+        )
+        if copied != manifest.files or _inventory_source_slot(payload) != entries:
+            raise ValueError
+        _validate_payload_against_manifest(staging, manifest)
+    except (OSError, TypeError, ValueError, _BackupOperationFailure) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.RESTORE_STAGING_FAILED,
+            "Não foi possível preparar os arquivos da restauração.",
+        ) from error
+
+
+def _publish_restored_slot(
+    active_slot: Path,
+    staging: Path,
+    rollback: Path,
+    manifest: BackupManifest,
+    active_root_chain: tuple[_PathIdentity, ...],
+    expected_active_state: os.stat_result,
+    expected_active_entries: tuple[_SourceEntry, ...],
+) -> None:
+    old_moved = False
+    restored_moved = False
+    try:
+        _assert_directory_chain(active_root_chain)
+        if os.path.lexists(rollback):
+            raise OSError
+        current_active_state = os.lstat(active_slot)
+        if (
+            not _same_stat_identity(current_active_state, expected_active_state)
+            or _inventory_source_slot(active_slot) != expected_active_entries
+        ):
+            raise OSError
+        os.rename(active_slot, rollback)
+        old_moved = True
+        moved_state = os.lstat(rollback)
+        if (
+            not _same_stat_identity(moved_state, expected_active_state)
+            or _inventory_source_slot(rollback) != expected_active_entries
+        ):
+            raise OSError
+        _assert_directory_chain(active_root_chain)
+        if os.path.lexists(active_slot):
+            raise OSError
+        os.rename(staging, active_slot)
+        restored_moved = True
+        _assert_directory_chain(active_root_chain)
+        _validate_payload_against_manifest(active_slot, manifest)
+        return
+    except (OSError, TypeError, ValueError, _BackupOperationFailure) as error:
+        if old_moved:
+            try:
+                _assert_directory_chain(active_root_chain)
+                if restored_moved:
+                    if os.path.lexists(staging):
+                        raise OSError
+                    os.rename(active_slot, staging)
+                if os.path.lexists(active_slot):
+                    raise OSError
+                os.rename(rollback, active_slot)
+            except (OSError, _BackupOperationFailure) as rollback_error:
+                raise _BackupOperationFailure(
+                    BackupErrorCode.RESTORE_ROLLBACK_FAILED,
+                    "A restauração ficou em estado parcial; não mova os arquivos e feche o aplicativo.",
+                ) from rollback_error
+        raise _BackupOperationFailure(
+            BackupErrorCode.RESTORE_PUBLISH_FAILED,
+            "Não foi possível concluir a restauração; o save original foi preservado.",
+        ) from error
+
+
+def _remove_restore_directory(
+    directory: Path,
+    active_root: Path,
+    active_root_chain: tuple[_PathIdentity, ...],
+    expected_state: os.stat_result,
+) -> None:
+    _assert_directory_chain(active_root_chain)
+    if directory.parent != active_root:
+        raise OSError
+    state = os.lstat(directory)
+    if (
+        not stat.S_ISDIR(state.st_mode)
+        or _has_reparse_attribute(state)
+        or not _same_stat_identity(state, expected_state)
+    ):
+        raise OSError
+    if os.name == "nt":
+        _remove_restore_directory_windows(directory, expected_state)
+        return
+    if not shutil.rmtree.avoids_symlink_attacks:
+        raise OSError
+    if not _same_stat_identity(os.lstat(directory), expected_state):
+        raise OSError
+    shutil.rmtree(directory)
+
+
+def _remove_restore_directory_windows(
+    directory: Path,
+    expected_state: os.stat_result,
+) -> None:
+    """Remove a árvore exata por handles Win32 sem seguir substituições."""
+    import ctypes
+    import ntpath
+    from ctypes import wintypes
+
+    from . import save_details as secure_reader
+
+    class _FileDispositionInfo(ctypes.Structure):
+        _fields_ = [("delete_file", ctypes.c_ubyte)]
+
+    set_file_information = secure_reader._KERNEL32.SetFileInformationByHandle
+    set_file_information.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    set_file_information.restype = wintypes.BOOL
+    delete_access = 0x00010000
+    file_disposition_info_class = 4
+
+    def remove_node(path: Path, expected: os.stat_result) -> None:
+        is_directory = stat.S_ISDIR(expected.st_mode)
+        flags = secure_reader._FILE_FLAG_OPEN_REPARSE_POINT
+        if is_directory:
+            flags |= secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+
+        handle: int | None = None
+        try:
+            handle = secure_reader._open_win32_handle(
+                path,
+                delete_access | secure_reader._FILE_READ_ATTRIBUTES,
+                flags,
+            )
+            information = secure_reader._get_win32_file_information(handle)
+            final_path = secure_reader._normalize_win32_final_path(
+                secure_reader._get_win32_final_path(handle)
+            )
+            expected_path = ntpath.normpath(str(path)).rstrip("\\/").casefold()
+            handle_is_directory = bool(
+                information.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+            )
+            if (
+                information.file_index != expected.st_ino
+                or final_path != expected_path
+                or information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+                or handle_is_directory != is_directory
+            ):
+                raise OSError
+
+            if is_directory:
+                children = sorted(os.scandir(path), key=lambda entry: entry.name)
+                for child in children:
+                    child_path = Path(child.path)
+                    child_state = os.lstat(child_path)
+                    if _has_reparse_attribute(child_state):
+                        raise OSError
+                    remove_node(child_path, child_state)
+                if any(os.scandir(path)):
+                    raise OSError
+
+            disposition = _FileDispositionInfo(1)
+            if not set_file_information(
+                handle,
+                file_disposition_info_class,
+                ctypes.byref(disposition),
+                ctypes.sizeof(disposition),
+            ):
+                raise OSError
+        finally:
+            if handle is not None:
+                secure_reader._close_win32_handle(handle)
+
+    remove_node(directory, expected_state)
+
+
 def _read_backup_record(root: Path, directory: Path) -> BackupRecord:
+    record, _manifest = _read_backup_record_and_manifest(root, directory)
+    return record
+
+
+def _read_backup_record_and_manifest(
+    root: Path,
+    directory: Path,
+) -> tuple[BackupRecord, BackupManifest]:
     directory_state = os.lstat(directory)
     if (
         not stat.S_ISDIR(directory_state.st_mode)
@@ -582,7 +1171,13 @@ def _read_backup_record(root: Path, directory: Path) -> BackupRecord:
     ):
         raise ValueError
 
-    return BackupRecord(
+    manifest = BackupManifest(
+        backup_id=directory.name,
+        slot_number=parsed_slot,
+        created_at_utc=created_at,
+        files=files,
+    )
+    record = BackupRecord(
         backup_id=directory.name,
         slot_number=parsed_slot,
         created_at_utc=created_at,
@@ -590,6 +1185,7 @@ def _read_backup_record(root: Path, directory: Path) -> BackupRecord:
         file_count=len(files),
         total_size_bytes=sum(file.size_bytes for file in files),
     )
+    return record, manifest
 
 
 def _read_manifest_bytes(
