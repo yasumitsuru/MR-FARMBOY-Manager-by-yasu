@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 import secrets
+import shutil
+import stat
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
 from .save_slots import SaveSlot
+
+
+BACKUP_MANIFEST_FILENAME = "manifest.json"
+BACKUP_PAYLOAD_DIRECTORY = "payload"
+BACKUP_SCHEMA_VERSION = 1
 
 
 class BackupErrorCode(str, Enum):
@@ -23,6 +34,16 @@ class BackupErrorCode(str, Enum):
     UNSAFE_BACKUP_ROOT = "unsafe_backup_root"
     SOURCE_INSIDE_BACKUP_ROOT = "source_inside_backup_root"
     DESTINATION_OUTSIDE_BACKUP_ROOT = "destination_outside_backup_root"
+    SOURCE_NOT_FOUND = "source_not_found"
+    SOURCE_NOT_DIRECTORY = "source_not_directory"
+    UNSAFE_SOURCE_ENTRY = "unsafe_source_entry"
+    BACKUP_ROOT_UNAVAILABLE = "backup_root_unavailable"
+    BACKUP_ALREADY_EXISTS = "backup_already_exists"
+    COPY_FAILED = "copy_failed"
+    SOURCE_CHANGED = "source_changed"
+    VALIDATION_FAILED = "validation_failed"
+    PUBLISH_FAILED = "publish_failed"
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 class BackupValidationError(ValueError):
@@ -41,7 +62,96 @@ class BackupLocation:
     backup_id: str
     slot: SaveSlot
     created_at_utc: datetime
+    source: Path
+    active_save_root: Path
+    backup_root: Path
     destination: Path
+
+
+@dataclass(frozen=True, slots=True)
+class BackupFileRecord:
+    """Metadados de integridade de um arquivo incluído no backup."""
+
+    relative_path: str
+    size_bytes: int
+    modified_at_ns: int
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class BackupManifest:
+    """Manifesto autocontido e sem caminhos pessoais."""
+
+    backup_id: str
+    slot_number: int
+    created_at_utc: datetime
+    files: tuple[BackupFileRecord, ...]
+
+    @property
+    def file_count(self) -> int:
+        return len(self.files)
+
+    @property
+    def total_size_bytes(self) -> int:
+        return sum(file.size_bytes for file in self.files)
+
+
+@dataclass(frozen=True, slots=True)
+class BackupRecord:
+    """Resumo de um backup persistente criado com sucesso."""
+
+    backup_id: str
+    slot_number: int
+    created_at_utc: datetime
+    destination: Path
+    file_count: int
+    total_size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class BackupCreationResult:
+    """Resultado sanitizado da criação de um backup."""
+
+    backup: BackupRecord | None
+    error_code: BackupErrorCode | None
+    public_message: str
+
+    @property
+    def is_success(self) -> bool:
+        return self.backup is not None and self.error_code is None
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceEntry:
+    relative_path: str
+    is_directory: bool
+    device: int
+    inode: int
+    mode: int
+    size_bytes: int
+    modified_at_ns: int
+    file_attributes: int
+
+
+@dataclass(frozen=True, slots=True)
+class _OpenedSource:
+    descriptor: int
+    initial_stat: os.stat_result
+    windows_state: object | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PathIdentity:
+    path: Path
+    device: int
+    inode: int
+
+
+class _BackupOperationFailure(Exception):
+    def __init__(self, code: BackupErrorCode, public_message: str) -> None:
+        self.code = code
+        self.public_message = public_message
+        super().__init__(public_message)
 
 
 _BACKUP_ID_PATTERN = re.compile(
@@ -52,6 +162,8 @@ _BACKUP_ID_PATTERN = re.compile(
 _WINDOWS_INVALID_CHARACTERS = set('\\/:*?"<>|')
 _MAX_SLOT_NUMBER = 999_999
 _BACKUP_SUFFIX_LENGTH = 32
+_COPY_CHUNK_SIZE = 1024 * 1024
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 def create_backup_id(
@@ -135,8 +247,850 @@ def resolve_backup_destination(
         backup_id=backup_id,
         slot=slot,
         created_at_utc=parsed_id[1],
+        source=source,
+        active_save_root=game_data,
+        backup_root=root,
         destination=destination,
     )
+
+
+def create_backup(
+    slot: SaveSlot,
+    active_save_root: Path | str,
+    backup_root: Path | str,
+    *,
+    created_at: datetime | None = None,
+    suffix: str | None = None,
+) -> BackupCreationResult:
+    """Copia um slot para staging, valida e publica sem sobrescrever."""
+    staging: Path | None = None
+    result: BackupCreationResult
+
+    try:
+        backup_id = create_backup_id(
+            slot.number,
+            created_at=created_at,
+            suffix=suffix,
+        )
+        _reject_existing_reparse_components(
+            slot.path,
+            BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+            "O slot selecionado contém um caminho não seguro.",
+        )
+        _reject_existing_reparse_components(
+            active_save_root,
+            BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+            "A pasta ativa de saves contém um caminho não seguro.",
+        )
+        _reject_existing_reparse_components(
+            backup_root,
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups contém um caminho não seguro.",
+        )
+        source_root_chain = _capture_existing_directory_chain(
+            active_save_root,
+            BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+            "A pasta ativa de saves contém um caminho não seguro.",
+        )
+        backup_initial_chain = _capture_existing_directory_chain(
+            backup_root,
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups contém um caminho não seguro.",
+        )
+        location = resolve_backup_destination(
+            slot,
+            active_save_root,
+            backup_root,
+            backup_id,
+        )
+        _assert_directory_chain(
+            source_root_chain,
+            BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+            "A pasta ativa de saves mudou durante a operação.",
+        )
+        _assert_directory_chain(
+            backup_initial_chain,
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups mudou durante a operação.",
+        )
+        source = location.source
+        source_entries = _inventory_source_slot(source)
+        root = location.backup_root
+        _prepare_backup_root(root, backup_initial_chain)
+        root_chain = _capture_directory_chain(root)
+
+        _assert_directory_chain(root_chain)
+        if os.path.lexists(location.destination):
+            raise _BackupOperationFailure(
+                BackupErrorCode.BACKUP_ALREADY_EXISTS,
+                "Já existe um backup com esse identificador.",
+            )
+
+        staging = root / f".staging-{backup_id}-{secrets.token_hex(8)}"
+        _assert_directory_chain(root_chain)
+        staging.mkdir(exist_ok=False)
+        staging_chain = _capture_directory_chain(staging)
+        payload = staging / BACKUP_PAYLOAD_DIRECTORY
+        _assert_directory_chain(staging_chain)
+        payload.mkdir()
+        payload_chain = _capture_directory_chain(payload)
+
+        directories = [entry for entry in source_entries if entry.is_directory]
+        files = [entry for entry in source_entries if not entry.is_directory]
+        for entry in directories:
+            directory = payload / Path(entry.relative_path)
+            _assert_directory_chain(payload_chain)
+            _assert_directory_chain(_capture_directory_chain(directory.parent))
+            directory.mkdir(exist_ok=False)
+
+        copied_files = tuple(
+            _copy_regular_file(
+                source / Path(entry.relative_path),
+                payload / Path(entry.relative_path),
+                entry,
+                root_chain,
+            )
+            for entry in files
+        )
+
+        if _inventory_source_slot(source) != source_entries:
+            raise _BackupOperationFailure(
+                BackupErrorCode.SOURCE_CHANGED,
+                "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+            )
+
+        manifest = BackupManifest(
+            backup_id=backup_id,
+            slot_number=slot.number,
+            created_at_utc=location.created_at_utc,
+            files=copied_files,
+        )
+        _write_manifest(
+            staging / BACKUP_MANIFEST_FILENAME,
+            manifest,
+            root_chain,
+        )
+        _validate_staged_backup(staging, manifest)
+
+        _publish_staged_backup(
+            staging,
+            location.destination,
+            root_chain,
+        )
+        staging = None
+        record = BackupRecord(
+            backup_id=manifest.backup_id,
+            slot_number=manifest.slot_number,
+            created_at_utc=manifest.created_at_utc,
+            destination=location.destination,
+            file_count=manifest.file_count,
+            total_size_bytes=manifest.total_size_bytes,
+        )
+        result = BackupCreationResult(
+            backup=record,
+            error_code=None,
+            public_message=f"Backup criado com sucesso: {record.backup_id}.",
+        )
+    except BackupValidationError as error:
+        result = BackupCreationResult(None, error.code, error.public_message)
+    except _BackupOperationFailure as error:
+        result = BackupCreationResult(None, error.code, error.public_message)
+    except OSError:
+        result = BackupCreationResult(
+            None,
+            BackupErrorCode.COPY_FAILED,
+            "Não foi possível copiar o save. Feche o jogo e tente novamente.",
+        )
+
+    cleanup_failed = False
+    if staging is not None and os.path.lexists(staging):
+        try:
+            _assert_directory_chain(root_chain)
+            current_staging = os.lstat(staging)
+            if _has_reparse_attribute(current_staging):
+                raise OSError
+            shutil.rmtree(staging)
+        except (OSError, UnboundLocalError, _BackupOperationFailure):
+            cleanup_failed = True
+
+    if cleanup_failed:
+        return BackupCreationResult(
+            None,
+            BackupErrorCode.CLEANUP_FAILED,
+            "O backup falhou e a pasta temporária não pôde ser removida.",
+        )
+    return result
+
+
+def _inventory_source_slot(source: Path) -> tuple[_SourceEntry, ...]:
+    try:
+        root_state = os.lstat(source)
+    except FileNotFoundError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_NOT_FOUND,
+            "O slot selecionado não existe.",
+        ) from error
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.COPY_FAILED,
+            "Não foi possível acessar o slot selecionado.",
+        ) from error
+
+    if not stat.S_ISDIR(root_state.st_mode):
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_NOT_DIRECTORY,
+            "O slot selecionado não é uma pasta.",
+        )
+    if _has_reparse_attribute(root_state):
+        raise _BackupOperationFailure(
+            BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+            "O slot selecionado contém um caminho não seguro.",
+        )
+
+    entries: list[_SourceEntry] = []
+    pending = [source]
+    while pending:
+        directory = pending.pop()
+        try:
+            children = sorted(os.scandir(directory), key=lambda item: item.name)
+        except OSError as error:
+            raise _BackupOperationFailure(
+                BackupErrorCode.COPY_FAILED,
+                "Não foi possível ler todos os arquivos do slot.",
+            ) from error
+
+        for child in children:
+            child_path = Path(child.path)
+            try:
+                # ``DirEntry.stat`` reports zeroed inode/device values on some
+                # Windows filesystems.  ``lstat`` keeps the comparison stable
+                # with the checks performed immediately before and after copy.
+                child_state = os.lstat(child_path)
+            except OSError as error:
+                raise _BackupOperationFailure(
+                    BackupErrorCode.COPY_FAILED,
+                    "Não foi possível ler todos os arquivos do slot.",
+                ) from error
+
+            if _has_reparse_attribute(child_state):
+                raise _BackupOperationFailure(
+                    BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+                    "O slot selecionado contém um caminho não seguro.",
+                )
+
+            relative_path = child_path.relative_to(source).as_posix()
+            entry = _source_entry(relative_path, child_state)
+            if entry.is_directory:
+                pending.append(child_path)
+            elif not stat.S_ISREG(entry.mode):
+                raise _BackupOperationFailure(
+                    BackupErrorCode.UNSAFE_SOURCE_ENTRY,
+                    "O slot selecionado contém um tipo de arquivo não suportado.",
+                )
+            entries.append(entry)
+
+    entries.sort(key=lambda entry: entry.relative_path)
+    return tuple(entries)
+
+
+def _source_entry(relative_path: str, state: os.stat_result) -> _SourceEntry:
+    return _SourceEntry(
+        relative_path=relative_path,
+        is_directory=stat.S_ISDIR(state.st_mode),
+        device=state.st_dev,
+        inode=state.st_ino,
+        mode=state.st_mode,
+        size_bytes=state.st_size,
+        modified_at_ns=state.st_mtime_ns,
+        file_attributes=getattr(state, "st_file_attributes", 0),
+    )
+
+
+def _has_reparse_attribute(state: os.stat_result) -> bool:
+    return stat.S_ISLNK(state.st_mode) or bool(
+        getattr(state, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
+def _reject_existing_reparse_components(
+    value: Path | str,
+    code: BackupErrorCode,
+    public_message: str,
+) -> None:
+    try:
+        path = Path(value)
+    except TypeError:
+        return
+    if not path.is_absolute():
+        return
+
+    current = Path(path.anchor)
+    for component in path.parts[1:]:
+        current /= component
+        if not os.path.lexists(current):
+            break
+        try:
+            state = os.lstat(current)
+        except OSError as error:
+            raise _BackupOperationFailure(code, public_message) from error
+        if _has_reparse_attribute(state):
+            raise _BackupOperationFailure(code, public_message)
+
+
+def _prepare_backup_root(
+    root: Path,
+    initial_chain: tuple[_PathIdentity, ...],
+) -> None:
+    if os.name != "nt":
+        _prepare_backup_root_posix(root, initial_chain)
+        return
+
+    expected = {identity.path: identity for identity in initial_chain}
+    try:
+        current = Path(root.anchor)
+        for component in root.parts[1:]:
+            current /= component
+            if not os.path.lexists(current):
+                _assert_directory_chain(initial_chain)
+                current.mkdir()
+            state = os.lstat(current)
+            if not stat.S_ISDIR(state.st_mode) or _has_reparse_attribute(state):
+                raise OSError
+            expected_identity = expected.get(current)
+            if expected_identity is not None and (
+                state.st_dev,
+                state.st_ino,
+            ) != (expected_identity.device, expected_identity.inode):
+                raise OSError
+        root_state = os.lstat(root)
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups não está disponível.",
+        ) from error
+
+    if not stat.S_ISDIR(root_state.st_mode) or _has_reparse_attribute(root_state):
+        raise _BackupOperationFailure(
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups não é segura.",
+        )
+
+
+def _prepare_backup_root_posix(
+    root: Path,
+    initial_chain: tuple[_PathIdentity, ...],
+) -> None:
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_flags |= getattr(os, "O_NOFOLLOW", 0)
+    current_directory: int | None = None
+    current_path = Path(root.anchor)
+    expected = {identity.path: identity for identity in initial_chain}
+    try:
+        current_directory = os.open(root.anchor, directory_flags)
+        for component in root.parts[1:]:
+            current_path /= component
+            try:
+                next_directory = os.open(
+                    component,
+                    directory_flags,
+                    dir_fd=current_directory,
+                )
+            except FileNotFoundError:
+                _assert_directory_chain(initial_chain)
+                os.mkdir(component, dir_fd=current_directory)
+                next_directory = os.open(
+                    component,
+                    directory_flags,
+                    dir_fd=current_directory,
+                )
+            opened_state = os.fstat(next_directory)
+            expected_identity = expected.get(current_path)
+            if (
+                not stat.S_ISDIR(opened_state.st_mode)
+                or _has_reparse_attribute(opened_state)
+                or (
+                    expected_identity is not None
+                    and (opened_state.st_dev, opened_state.st_ino)
+                    != (expected_identity.device, expected_identity.inode)
+                )
+            ):
+                os.close(next_directory)
+                raise OSError
+            os.close(current_directory)
+            current_directory = next_directory
+    except (OSError, TypeError, ValueError) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A pasta de backups não está disponível.",
+        ) from error
+    finally:
+        if current_directory is not None:
+            try:
+                os.close(current_directory)
+            except OSError:
+                pass
+
+
+def _capture_directory_chain(path: Path) -> tuple[_PathIdentity, ...]:
+    identities: list[_PathIdentity] = []
+    current = Path(path.anchor)
+    try:
+        for component in path.parts[1:]:
+            current /= component
+            state = os.lstat(current)
+            if not stat.S_ISDIR(state.st_mode) or _has_reparse_attribute(state):
+                raise OSError
+            identities.append(_PathIdentity(current, state.st_dev, state.st_ino))
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+            "A cadeia de diretórios do backup não é segura.",
+        ) from error
+    return tuple(identities)
+
+
+def _capture_existing_directory_chain(
+    value: Path | str,
+    code: BackupErrorCode,
+    public_message: str,
+) -> tuple[_PathIdentity, ...]:
+    try:
+        path = Path(value)
+    except TypeError:
+        return ()
+    if not path.is_absolute():
+        return ()
+
+    identities: list[_PathIdentity] = []
+    current = Path(path.anchor)
+    try:
+        for component in path.parts[1:]:
+            current /= component
+            if not os.path.lexists(current):
+                break
+            state = os.lstat(current)
+            if not stat.S_ISDIR(state.st_mode) or _has_reparse_attribute(state):
+                raise OSError
+            identities.append(_PathIdentity(current, state.st_dev, state.st_ino))
+    except OSError as error:
+        raise _BackupOperationFailure(code, public_message) from error
+    return tuple(identities)
+
+
+def _assert_directory_chain(
+    chain: tuple[_PathIdentity, ...],
+    code: BackupErrorCode = BackupErrorCode.BACKUP_ROOT_UNAVAILABLE,
+    public_message: str = "A cadeia de diretórios do backup mudou durante a operação.",
+) -> None:
+    try:
+        for identity in chain:
+            current = os.lstat(identity.path)
+            if (
+                not stat.S_ISDIR(current.st_mode)
+                or _has_reparse_attribute(current)
+                or (current.st_dev, current.st_ino)
+                != (identity.device, identity.inode)
+            ):
+                raise OSError
+    except OSError as error:
+        raise _BackupOperationFailure(
+            code,
+            public_message,
+        ) from error
+
+
+def _copy_regular_file(
+    source: Path,
+    destination: Path,
+    expected_state: _SourceEntry,
+    backup_root_chain: tuple[_PathIdentity, ...],
+) -> BackupFileRecord:
+    opened: _OpenedSource | None = None
+    try:
+        before = os.lstat(source)
+        if _source_entry(expected_state.relative_path, before) != expected_state:
+            raise _BackupOperationFailure(
+                BackupErrorCode.SOURCE_CHANGED,
+                "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+            )
+        opened = _open_source_descriptor(source, expected_state)
+
+        digest = hashlib.sha256()
+        copied_size = 0
+        _assert_directory_chain(backup_root_chain)
+        _assert_directory_chain(_capture_directory_chain(destination.parent))
+        with destination.open("xb") as destination_file:
+            while chunk := os.read(opened.descriptor, _COPY_CHUNK_SIZE):
+                destination_file.write(chunk)
+                digest.update(chunk)
+                copied_size += len(chunk)
+            destination_file.flush()
+            os.fsync(destination_file.fileno())
+
+        after = os.lstat(source)
+        if (
+            _source_entry(expected_state.relative_path, after) != expected_state
+            or _source_entry(
+                expected_state.relative_path,
+                os.fstat(opened.descriptor),
+            )
+            != expected_state
+            or copied_size != expected_state.size_bytes
+        ):
+            raise _BackupOperationFailure(
+                BackupErrorCode.SOURCE_CHANGED,
+                "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+            )
+        _verify_windows_source_state(opened)
+        os.utime(
+            destination,
+            ns=(expected_state.modified_at_ns, expected_state.modified_at_ns),
+        )
+    except _BackupOperationFailure:
+        raise
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.COPY_FAILED,
+            "Não foi possível copiar todos os arquivos do save.",
+        ) from error
+    finally:
+        if opened is not None:
+            try:
+                os.close(opened.descriptor)
+            except OSError:
+                if sys.exception() is None:
+                    raise _BackupOperationFailure(
+                        BackupErrorCode.COPY_FAILED,
+                        "Não foi possível concluir a leitura segura do save.",
+                    ) from None
+
+    return BackupFileRecord(
+        relative_path=expected_state.relative_path,
+        size_bytes=copied_size,
+        modified_at_ns=expected_state.modified_at_ns,
+        sha256=digest.hexdigest(),
+    )
+
+
+def _open_source_descriptor(
+    source: Path,
+    expected_state: _SourceEntry,
+) -> _OpenedSource:
+    if os.name == "nt":
+        return _open_source_descriptor_windows(source, expected_state)
+    return _open_source_descriptor_posix(source, expected_state)
+
+
+def _open_source_descriptor_posix(
+    source: Path,
+    expected_state: _SourceEntry,
+) -> _OpenedSource:
+    parts = Path(expected_state.relative_path).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_CHANGED,
+            "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+        )
+
+    source_root = source
+    for _ in parts:
+        source_root = source_root.parent
+
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    current_directory: int | None = None
+    descriptor: int | None = None
+    try:
+        current_directory = os.open(source_root.anchor, directory_flags)
+        for component in (*source_root.parts[1:], *parts[:-1]):
+            next_directory = os.open(
+                component,
+                directory_flags,
+                dir_fd=current_directory,
+            )
+            os.close(current_directory)
+            current_directory = next_directory
+        descriptor = os.open(
+            parts[-1],
+            file_flags,
+            dir_fd=current_directory,
+        )
+        opened_stat = os.fstat(descriptor)
+        if _source_entry(expected_state.relative_path, opened_stat) != expected_state:
+            raise OSError
+        opened = _OpenedSource(descriptor, opened_stat)
+        descriptor = None
+        return opened
+    except (OSError, TypeError, ValueError) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_CHANGED,
+            "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+        ) from error
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if current_directory is not None:
+            try:
+                os.close(current_directory)
+            except OSError:
+                pass
+
+
+def _open_source_descriptor_windows(
+    source: Path,
+    expected_state: _SourceEntry,
+) -> _OpenedSource:
+    import msvcrt
+    import ntpath
+
+    from . import save_details as secure_reader
+
+    parent_handle: int | None = None
+    file_handle: int | None = None
+    descriptor: int | None = None
+    try:
+        parent_handle = secure_reader._open_win32_handle(
+            source.parent,
+            secure_reader._FILE_READ_ATTRIBUTES,
+            secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+            | secure_reader._FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        parent_info = secure_reader._get_win32_file_information(parent_handle)
+        parent_final = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(parent_handle)
+        )
+        expected_parent = ntpath.normpath(str(source.parent)).rstrip("\\/").casefold()
+        if (
+            parent_info.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or not parent_info.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+            or parent_final != expected_parent
+        ):
+            raise OSError
+
+        file_handle = secure_reader._open_win32_handle(
+            source,
+            secure_reader._GENERIC_READ,
+            secure_reader._FILE_FLAG_OPEN_REPARSE_POINT
+            | secure_reader._FILE_FLAG_SEQUENTIAL_SCAN,
+        )
+        file_info = secure_reader._get_win32_file_information(file_handle)
+        file_final = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(file_handle)
+        )
+        expected_file = ntpath.normpath(str(source)).rstrip("\\/").casefold()
+        if (
+            file_info.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or file_info.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+            or file_final != expected_file
+        ):
+            raise OSError
+
+        descriptor = msvcrt.open_osfhandle(
+            file_handle,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0),
+        )
+        file_handle = None
+        opened_stat = os.fstat(descriptor)
+        if _source_entry(expected_state.relative_path, opened_stat) != expected_state:
+            raise OSError
+        opened = _OpenedSource(descriptor, opened_stat, file_info)
+        descriptor = None
+        return opened
+    except (OSError, OverflowError, ValueError) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_CHANGED,
+            "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+        ) from error
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if file_handle is not None:
+            try:
+                secure_reader._close_win32_handle(file_handle)
+            except OSError:
+                pass
+        if parent_handle is not None:
+            try:
+                secure_reader._close_win32_handle(parent_handle)
+            except OSError:
+                pass
+
+
+def _verify_windows_source_state(opened: _OpenedSource) -> None:
+    if opened.windows_state is None:
+        return
+
+    import msvcrt
+
+    from . import save_details as secure_reader
+
+    final_state = secure_reader._get_win32_file_information(
+        msvcrt.get_osfhandle(opened.descriptor)
+    )
+    if not secure_reader._same_win32_file_state(
+        opened.windows_state,
+        final_state,
+    ):
+        raise _BackupOperationFailure(
+            BackupErrorCode.SOURCE_CHANGED,
+            "O save mudou durante a cópia. Feche o jogo e tente novamente.",
+        )
+
+
+def _publish_staged_backup(
+    staging: Path,
+    destination: Path,
+    backup_root_chain: tuple[_PathIdentity, ...],
+) -> None:
+    reserved_state: os.stat_result | None = None
+    try:
+        _assert_directory_chain(backup_root_chain)
+        destination.mkdir(exist_ok=False)
+        reserved_state = os.lstat(destination)
+    except FileExistsError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.BACKUP_ALREADY_EXISTS,
+            "Já existe um backup com esse identificador.",
+        ) from error
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.PUBLISH_FAILED,
+            "Não foi possível concluir o backup.",
+        ) from error
+
+    try:
+        _assert_directory_chain(backup_root_chain)
+        os.rename(
+            staging / BACKUP_PAYLOAD_DIRECTORY,
+            destination / BACKUP_PAYLOAD_DIRECTORY,
+        )
+        _assert_directory_chain(backup_root_chain)
+        os.rename(
+            staging / BACKUP_MANIFEST_FILENAME,
+            destination / BACKUP_MANIFEST_FILENAME,
+        )
+        staging.rmdir()
+    except OSError as error:
+        try:
+            current_state = os.lstat(destination)
+            if (
+                _has_reparse_attribute(current_state)
+                or not _same_stat_identity(reserved_state, current_state)
+            ):
+                raise OSError
+            shutil.rmtree(destination)
+        except OSError as cleanup_error:
+            raise _BackupOperationFailure(
+                BackupErrorCode.CLEANUP_FAILED,
+                "O backup falhou e o destino incompleto não pôde ser removido.",
+            ) from cleanup_error
+        raise _BackupOperationFailure(
+            BackupErrorCode.PUBLISH_FAILED,
+            "Não foi possível concluir o backup.",
+        ) from error
+
+
+def _same_stat_identity(
+    first: os.stat_result,
+    second: os.stat_result,
+) -> bool:
+    return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
+
+
+def _write_manifest(
+    path: Path,
+    manifest: BackupManifest,
+    backup_root_chain: tuple[_PathIdentity, ...],
+) -> None:
+    serialized = json.dumps(
+        _manifest_as_dict(manifest),
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
+    try:
+        _assert_directory_chain(backup_root_chain)
+        _assert_directory_chain(_capture_directory_chain(path.parent))
+        with path.open("x", encoding="utf-8", newline="\n") as manifest_file:
+            manifest_file.write(serialized)
+            manifest_file.write("\n")
+            manifest_file.flush()
+            os.fsync(manifest_file.fileno())
+    except OSError as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.COPY_FAILED,
+            "Não foi possível registrar o manifesto do backup.",
+        ) from error
+
+
+def _manifest_as_dict(manifest: BackupManifest) -> dict[str, object]:
+    return {
+        "schema_version": BACKUP_SCHEMA_VERSION,
+        "backup_id": manifest.backup_id,
+        "slot_number": manifest.slot_number,
+        "created_at_utc": manifest.created_at_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "file_count": manifest.file_count,
+        "total_size_bytes": manifest.total_size_bytes,
+        "files": [
+            {
+                "relative_path": file.relative_path,
+                "size_bytes": file.size_bytes,
+                "modified_at_ns": file.modified_at_ns,
+                "sha256": file.sha256,
+            }
+            for file in manifest.files
+        ],
+    }
+
+
+def _validate_staged_backup(staging: Path, manifest: BackupManifest) -> None:
+    try:
+        top_level_names = {entry.name for entry in os.scandir(staging)}
+        if top_level_names != {BACKUP_MANIFEST_FILENAME, BACKUP_PAYLOAD_DIRECTORY}:
+            raise ValueError
+
+        manifest_content = json.loads(
+            (staging / BACKUP_MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+        if manifest_content != _manifest_as_dict(manifest):
+            raise ValueError
+
+        payload = staging / BACKUP_PAYLOAD_DIRECTORY
+        copied_entries = _inventory_source_slot(payload)
+        copied_files = {
+            entry.relative_path: entry
+            for entry in copied_entries
+            if not entry.is_directory
+        }
+        if set(copied_files) != {file.relative_path for file in manifest.files}:
+            raise ValueError
+
+        for file in manifest.files:
+            copied = copied_files[file.relative_path]
+            if copied.size_bytes != file.size_bytes:
+                raise ValueError
+            if _sha256_file(payload / Path(file.relative_path)) != file.sha256:
+                raise ValueError
+    except (_BackupOperationFailure, OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.VALIDATION_FAILED,
+            "A validação do backup falhou; nenhum backup foi publicado.",
+        ) from error
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source_file:
+        while chunk := source_file.read(_COPY_CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _validate_slot_number(slot_number: int) -> None:
