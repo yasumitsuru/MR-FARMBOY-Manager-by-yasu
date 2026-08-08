@@ -165,18 +165,17 @@ class TestSaveSlotsUI:
         assert empty_label is not None
         assert empty_label.isHidden()
 
-    def test_widgets_tem_object_names(self, qt_app: QApplication) -> None:
+    def test_widgets_tem_object_names(
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
         """Teste que widgets possuem os objectName definidos."""
         from mr_farmboy_manager.application import create_main_window
-        from mr_farmboy_manager.save_slots import SaveSlot, SaveSlotSummary
 
-        slot = SaveSlot(number=1, path=Path("save_1"))
-        summary = SaveSlotSummary(slot=slot, tres_file_count=4)
-
-        def loader() -> list:
-            return [summary]
-
-        window = create_main_window(qt_app, loader=loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app)
 
         group = window.findChild(QGroupBox, "save_slots_group")
         assert group is not None

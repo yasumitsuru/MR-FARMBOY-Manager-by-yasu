@@ -157,7 +157,11 @@ class TestSaveDirectoryChooserUI:
 
 
 
-    def test_botao_de_instalacao_continua_sem_chamar_chooser(self, qt_app: QApplication) -> None:
+    def test_botao_de_instalacao_continua_sem_chamar_chooser(
+        self,
+        qt_app: QApplication,
+        test_game_path: Path,
+    ) -> None:
         """Teste 8: botão de instalação continua sem chamar o chooser."""
         from mr_farmboy_manager.application import create_main_window
 
@@ -168,7 +172,11 @@ class TestSaveDirectoryChooserUI:
             called = True
             return Path("C:/Saves")
 
-        window = create_main_window(qt_app, save_directory_chooser=chooser)
+        window = create_main_window(
+            qt_app,
+            save_directory_chooser=chooser,
+            game_install_directory_chooser=lambda: test_game_path,
+        )
 
         browse_game_install_button = window.findChild(QPushButton, "browse_game_install_button")
         assert browse_game_install_button is not None

@@ -155,7 +155,11 @@ class TestGameInstallDirectoryChooserUI:
 
         window.close()
 
-    def test_botao_saves_nao_chama_game_install_directory_chooser(self, qt_app: QApplication) -> None:
+    def test_botao_saves_nao_chama_game_install_directory_chooser(
+        self,
+        qt_app: QApplication,
+        test_save_path: Path,
+    ) -> None:
         """Teste 7: botão dos saves não chama game_install_directory_chooser."""
         from mr_farmboy_manager.application import create_main_window
 
@@ -166,7 +170,11 @@ class TestGameInstallDirectoryChooserUI:
             called = True
             return Path("C:/Games/MR FARMBOY")
 
-        window = create_main_window(qt_app, game_install_directory_chooser=chooser)
+        window = create_main_window(
+            qt_app,
+            save_directory_chooser=lambda: test_save_path,
+            game_install_directory_chooser=chooser,
+        )
 
         browse_save_path_button = window.findChild(QPushButton, "browse_save_path_button")
         assert browse_save_path_button is not None
