@@ -185,6 +185,8 @@ def create_main_window(
     manual_paths_layout.addWidget(load_saves_button)
 
     def on_load_saves_clicked() -> None:
+        nonlocal _summaries_for_selection
+
         if manual_save_loader is not None:
             result = manual_save_loader(save_path_input.text())
         else:
@@ -208,7 +210,8 @@ def create_main_window(
         if not result.is_success:
             return
 
-        render_save_slot_summaries(empty_label, save_slots_list, list(result.summaries))
+        _summaries_for_selection = list(result.summaries)
+        render_save_slot_summaries(empty_label, save_slots_list, _summaries_for_selection)
 
     load_saves_button.clicked.connect(on_load_saves_clicked)
 

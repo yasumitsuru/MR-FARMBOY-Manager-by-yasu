@@ -164,3 +164,47 @@ class TestManualValidRenderUI:
         QApplication.processEvents()
 
         assert label.text() == "Nenhum save encontrado"
+
+    def test_selecao_apos_carga_manual_recebe_novo_resumo(
+        self,
+        qt_app: QApplication,
+    ) -> None:
+        """A selecao deve acompanhar os resumos substituidos pela carga manual."""
+        from mr_farmboy_manager.application import create_main_window
+
+        initial_summary = SaveSlotSummary(
+            slot=SaveSlot(number=1, path=Path("save_1")),
+            tres_file_count=4,
+        )
+        manual_summary = SaveSlotSummary(
+            slot=SaveSlot(number=2, path=Path("save_2")),
+            tres_file_count=7,
+        )
+        received_summaries: list[SaveSlotSummary] = []
+
+        def manual_loader(path: str) -> SaveSlotsLoadResult:
+            return SaveSlotsLoadResult(
+                validation=DirectoryValidationResult(
+                    code=DirectoryValidationCode.VALID,
+                    path=Path(path) if path else None,
+                ),
+                summaries=(manual_summary,),
+            )
+
+        window = create_main_window(
+            qt_app,
+            loader=lambda: [initial_summary],
+            manual_save_loader=manual_loader,
+            on_slot_selected=received_summaries.append,
+        )
+        button = window.findChild(QPushButton, "load_saves_button")
+        list_widget = window.findChild(QListWidget, "save_slots_list")
+
+        assert button is not None
+        assert list_widget is not None
+
+        button.click()
+        list_widget.setCurrentRow(0)
+        QApplication.processEvents()
+
+        assert received_summaries == [manual_summary]
