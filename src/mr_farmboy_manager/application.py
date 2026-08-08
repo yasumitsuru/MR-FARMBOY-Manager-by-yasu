@@ -27,7 +27,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
 
-from mr_farmboy_manager.backups import BackupCreationResult, create_backup
+from mr_farmboy_manager.backups import (
+    BackupCreationResult,
+    BackupDiscoveryResult,
+    BackupErrorCode,
+    BackupRecord,
+    create_backup,
+    discover_backups,
+)
 from mr_farmboy_manager.manual_paths import (
     SaveSlotsLoadResult,
     DirectoryValidationCode,
@@ -72,6 +79,8 @@ SaveDetailsLoader = Callable[[SaveSlotSummary], SaveSlotDetails]
 
 BackupCreator = Callable[[SaveSlot, Path, Path], BackupCreationResult]
 
+BackupLoader = Callable[[Path], BackupDiscoveryResult]
+
 
 ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
 
@@ -96,6 +105,19 @@ def format_file_size(size_bytes: int) -> str:
     if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f} KiB".replace(".", ",")
     return f"{size_bytes / (1024 * 1024):.1f} MiB".replace(".", ",")
+
+
+def format_backup_record(record: BackupRecord) -> str:
+    """Formata um resumo de backup sem reinterpretar seu manifesto."""
+    created_at = record.created_at_utc.astimezone(timezone.utc).strftime(
+        "%Y-%m-%d %H:%M UTC"
+    )
+    plural = "arquivo" if record.file_count == 1 else "arquivos"
+    return (
+        f"Backup — Slot {record.slot_number} — {created_at} — "
+        f"{record.file_count} {plural} — {format_file_size(record.total_size_bytes)} — "
+        f"ID: {record.backup_id}"
+    )
 
 
 def format_save_slot_details(details: SaveSlotDetails) -> str:
@@ -180,6 +202,7 @@ def create_main_window(
     settings_store: SettingsStore | None = None,
     save_details_loader: SaveDetailsLoader | None = None,
     backup_creator: BackupCreator | None = None,
+    backup_loader: BackupLoader | None = None,
     backup_root: Path | str | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
@@ -458,7 +481,7 @@ def create_main_window(
     save_slot_details_view.setPlainText("Selecione um slot para consultar os detalhes.")
     save_slot_details_layout.addWidget(save_slot_details_view)
 
-    backup_group = QGroupBox("Backup do slot")
+    backup_group = QGroupBox("Backups")
     backup_group.setObjectName("backup_group")
     backup_layout = QVBoxLayout(backup_group)
 
@@ -471,6 +494,24 @@ def create_main_window(
     backup_root_label.setObjectName("backup_root_label")
     backup_root_label.setWordWrap(True)
     backup_layout.addWidget(backup_root_label)
+
+    backup_list_status_label = QLabel()
+    backup_list_status_label.setObjectName("backup_list_status_label")
+    backup_list_status_label.setWordWrap(True)
+    backup_layout.addWidget(backup_list_status_label)
+
+    empty_backups_label = QLabel("Nenhum backup criado")
+    empty_backups_label.setObjectName("empty_backups_label")
+    empty_backups_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    empty_backups_label.hide()
+    backup_layout.addWidget(empty_backups_label)
+
+    backups_list = QListWidget()
+    backups_list.setObjectName("backups_list")
+    backups_list.setMinimumHeight(100)
+    backups_list.setMaximumHeight(150)
+    backups_list.hide()
+    backup_layout.addWidget(backups_list)
 
     create_backup_button = QPushButton("Criar backup do slot selecionado")
     create_backup_button.setObjectName("create_backup_button")
@@ -498,6 +539,41 @@ def create_main_window(
     details_loader = save_details_loader if save_details_loader is not None else inspect_save_slot
     selected_summary: SaveSlotSummary | None = None
     effective_backup_creator = backup_creator if backup_creator is not None else create_backup
+    effective_backup_loader = backup_loader if backup_loader is not None else discover_backups
+    _backups_for_selection: list[BackupRecord] = []
+
+    def apply_backup_discovery_result(result: BackupDiscoveryResult) -> None:
+        nonlocal _backups_for_selection
+
+        if not result.is_success:
+            _backups_for_selection = []
+            render_backup_records(empty_backups_label, backups_list, [])
+            empty_backups_label.setText("Backups indisponíveis")
+            backup_list_status_label.setText(result.public_message)
+            return
+
+        _backups_for_selection = list(result.backups)
+        empty_backups_label.setText("Nenhum backup criado")
+        render_backup_records(
+            empty_backups_label,
+            backups_list,
+            _backups_for_selection,
+        )
+        backup_list_status_label.setText(result.public_message)
+
+    def refresh_backups() -> None:
+        try:
+            result = effective_backup_loader(resolved_backup_root)
+            apply_backup_discovery_result(result)
+        except Exception:
+            apply_backup_discovery_result(
+                BackupDiscoveryResult(
+                    backups=(),
+                    invalid_entries=(),
+                    error_code=BackupErrorCode.DISCOVERY_FAILED,
+                    public_message="Não foi possível listar os backups.",
+                )
+            )
 
     def reset_backup_action() -> None:
         nonlocal selected_summary
@@ -605,6 +681,7 @@ def create_main_window(
                     f"{record.file_count} {plural}, "
                     f"{format_file_size(record.total_size_bytes)}."
                 )
+                refresh_backups()
             else:
                 backup_status_label.setText(result.public_message)
         finally:
@@ -614,6 +691,7 @@ def create_main_window(
     create_backup_button.clicked.connect(on_create_backup_clicked)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
+    refresh_backups()
     update_save_path_status(save_path_input.text())
     update_game_install_path_status(game_install_path_input.text())
 
@@ -678,6 +756,25 @@ def render_save_slot_summaries(
             f"{summary.tres_file_count} arquivos .tres"
         )
         save_slots_list.addItem(QListWidgetItem(line_text))
+
+
+def render_backup_records(
+    empty_label: QLabel,
+    backups_list: QListWidget,
+    records: list[BackupRecord],
+) -> None:
+    """Renderiza backups já descobertos, preservando sua ordenação."""
+    if not records:
+        backups_list.clear()
+        empty_label.show()
+        backups_list.hide()
+        return
+
+    empty_label.hide()
+    backups_list.show()
+    backups_list.clear()
+    for record in records:
+        backups_list.addItem(QListWidgetItem(format_backup_record(record)))
 
 
 def run() -> int:
