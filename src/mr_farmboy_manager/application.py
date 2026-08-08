@@ -276,11 +276,13 @@ def create_main_window(
     game_install_hint_label.setObjectName("game_install_hint_label")
     manual_paths_layout.addWidget(game_install_hint_label)
 
-    # Botão de ação futuro
+    # Carregamento manual de saves
     load_saves_button = QPushButton("Carregar saves")
     load_saves_button.setObjectName("load_saves_button")
     load_saves_button.setEnabled(True)
-    load_saves_button.setToolTip("O carregamento será habilitado após a integração com a validação de caminhos.")
+    load_saves_button.setToolTip(
+        "Valida a pasta configurada e carrega os saves sem reiniciar o aplicativo."
+    )
     manual_paths_layout.addWidget(load_saves_button)
 
     active_manual_save_path: str | None = None

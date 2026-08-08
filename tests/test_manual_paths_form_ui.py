@@ -162,7 +162,9 @@ class TestFormularioVisualDeCaminhos:
 
         button = window.findChild(QPushButton, "load_saves_button")
         assert button is not None
-        assert button.toolTip() == "O carregamento será habilitado após a integração com a validação de caminhos."
+        assert button.toolTip() == (
+            "Valida a pasta configurada e carrega os saves sem reiniciar o aplicativo."
+        )
 
     def test_texto_do_caminho_provavel_esta_correto(self, qt_app: QApplication) -> None:
         """Teste que texto do caminho provável dos saves está correto."""
