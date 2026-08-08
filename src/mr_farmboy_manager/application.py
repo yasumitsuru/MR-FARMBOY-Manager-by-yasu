@@ -24,8 +24,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from mr_farmboy_manager.manual_paths import SaveSlotsLoadResult, DirectoryValidationCode, load_save_slot_summaries
+from mr_farmboy_manager.manual_paths import (
+    SaveSlotsLoadResult,
+    DirectoryValidationCode,
+    load_save_slot_summaries,
+    validate_directory_path,
+)
 from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
+from mr_farmboy_manager.settings import AppSettings, QtSettingsStore, SettingsStore
 
 
 def create_application() -> QApplication:
@@ -64,6 +70,7 @@ def create_main_window(
     save_directory_chooser: DirectoryChooser | None = None,
     game_install_directory_chooser: DirectoryChooser | None = None,
     manual_save_loader: ManualSaveLoader | None = None,
+    settings_store: SettingsStore | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -121,6 +128,7 @@ def create_main_window(
 
             if selected is not None:
                 save_path_input.setText(str(selected))
+                persist_save_directory_if_valid(save_path_input.text())
 
             return
 
@@ -132,8 +140,12 @@ def create_main_window(
 
         if selected_path:
             save_path_input.setText(selected_path)
+            persist_save_directory_if_valid(save_path_input.text())
 
     browse_save_path_button.clicked.connect(choose_save_directory)
+    save_path_input.editingFinished.connect(
+        lambda: persist_save_directory_if_valid(save_path_input.text())
+    )
 
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
     save_path_hint_label.setObjectName("save_path_hint_label")
@@ -148,6 +160,36 @@ def create_main_window(
     game_install_path_input.setPlaceholderText("Selecione ou informe a pasta de instalação")
     manual_paths_layout.addWidget(game_install_path_input)
 
+    current_settings = (
+        settings_store.load() if settings_store is not None else AppSettings()
+    )
+    save_path_input.setText(current_settings.save_directory)
+    game_install_path_input.setText(current_settings.game_install_directory)
+
+    def persist_save_directory_if_valid(value: str) -> None:
+        nonlocal current_settings
+        validation = validate_directory_path(value)
+        if settings_store is None or not validation.is_valid or validation.path is None:
+            return
+
+        current_settings = AppSettings(
+            save_directory=str(validation.path),
+            game_install_directory=current_settings.game_install_directory,
+        )
+        settings_store.save(current_settings)
+
+    def persist_game_install_directory_if_valid(value: str) -> None:
+        nonlocal current_settings
+        validation = validate_directory_path(value)
+        if settings_store is None or not validation.is_valid or validation.path is None:
+            return
+
+        current_settings = AppSettings(
+            save_directory=current_settings.save_directory,
+            game_install_directory=str(validation.path),
+        )
+        settings_store.save(current_settings)
+
     browse_game_install_button = QPushButton("Procurar...")
     browse_game_install_button.setObjectName("browse_game_install_button")
     browse_game_install_button.setEnabled(True)
@@ -159,6 +201,7 @@ def create_main_window(
 
             if selected is not None:
                 game_install_path_input.setText(str(selected))
+                persist_game_install_directory_if_valid(game_install_path_input.text())
 
             return
 
@@ -170,8 +213,14 @@ def create_main_window(
 
         if selected_path:
             game_install_path_input.setText(selected_path)
+            persist_game_install_directory_if_valid(game_install_path_input.text())
 
     browse_game_install_button.clicked.connect(choose_game_install_directory)
+    game_install_path_input.editingFinished.connect(
+        lambda: persist_game_install_directory_if_valid(
+            game_install_path_input.text()
+        )
+    )
 
     game_install_hint_label = QLabel("Possível caminho Steam: <biblioteca Steam>\\steamapps\\common\\MR FARMBOY")
     game_install_hint_label.setObjectName("game_install_hint_label")
@@ -200,6 +249,7 @@ def create_main_window(
 
         if apply_manual_load_result(result):
             active_manual_save_path = requested_path
+            persist_save_directory_if_valid(requested_path)
 
     load_saves_button.clicked.connect(on_load_saves_clicked)
 
@@ -327,6 +377,6 @@ def run() -> int:
         Código de saída da aplicação (0 para sucesso).
     """
     app = create_application()
-    window = create_main_window(app)
+    window = create_main_window(app, settings_store=QtSettingsStore())
     window.show()
     return app.exec()
