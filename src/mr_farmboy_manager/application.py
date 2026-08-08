@@ -25,15 +25,20 @@ from PySide6.QtWidgets import (
     QFileDialog,
 )
 from PySide6.QtGui import QFontDatabase
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QStandardPaths, Qt, QTimer
 
+from mr_farmboy_manager.backups import BackupCreationResult, create_backup
 from mr_farmboy_manager.manual_paths import (
     SaveSlotsLoadResult,
     DirectoryValidationCode,
     load_save_slot_summaries,
     validate_directory_path,
 )
-from mr_farmboy_manager.save_slots import SaveSlotSummary, build_save_slot_summaries
+from mr_farmboy_manager.save_slots import (
+    SaveSlot,
+    SaveSlotSummary,
+    build_save_slot_summaries,
+)
 from mr_farmboy_manager.save_details import SaveSlotDetails, inspect_save_slot
 from mr_farmboy_manager.settings import AppSettings, QtSettingsStore, SettingsStore
 
@@ -55,6 +60,9 @@ def create_application() -> QApplication:
         # Cria nova instância apenas se não houver aplicação existente
         app = QApplication([])
 
+    app.setOrganizationName("yasu")
+    app.setApplicationName("MR FARMBOY Manager")
+
     return app
 
 
@@ -62,11 +70,32 @@ SaveSlotsLoader = Callable[[], list[SaveSlotSummary]]
 
 SaveDetailsLoader = Callable[[SaveSlotSummary], SaveSlotDetails]
 
+BackupCreator = Callable[[SaveSlot, Path, Path], BackupCreationResult]
+
 
 ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
 
 
 SaveSlotSelectedCallback = Callable[[SaveSlotSummary], None] | None
+
+
+def default_backup_root() -> Path:
+    """Retorna a pasta local privada do aplicativo para backups persistentes."""
+    base = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppLocalDataLocation
+    )
+    if not base:
+        raise RuntimeError("Diretório local do aplicativo indisponível.")
+    return Path(base) / "backups"
+
+
+def format_file_size(size_bytes: int) -> str:
+    """Formata uma quantidade não negativa para feedback compacto na UI."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KiB".replace(".", ",")
+    return f"{size_bytes / (1024 * 1024):.1f} MiB".replace(".", ",")
 
 
 def format_save_slot_details(details: SaveSlotDetails) -> str:
@@ -150,6 +179,8 @@ def create_main_window(
     manual_save_loader: ManualSaveLoader | None = None,
     settings_store: SettingsStore | None = None,
     save_details_loader: SaveDetailsLoader | None = None,
+    backup_creator: BackupCreator | None = None,
+    backup_root: Path | str | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
 
@@ -426,7 +457,35 @@ def create_main_window(
     save_slot_details_view.setMaximumHeight(220)
     save_slot_details_view.setPlainText("Selecione um slot para consultar os detalhes.")
     save_slot_details_layout.addWidget(save_slot_details_view)
-    save_slots_layout.addWidget(save_slot_details_group)
+
+    backup_group = QGroupBox("Backup do slot")
+    backup_group.setObjectName("backup_group")
+    backup_layout = QVBoxLayout(backup_group)
+
+    resolved_backup_root = (
+        default_backup_root()
+        if backup_root is None
+        else Path(backup_root)
+    )
+    backup_root_label = QLabel(f"Destino dos backups: {resolved_backup_root}")
+    backup_root_label.setObjectName("backup_root_label")
+    backup_root_label.setWordWrap(True)
+    backup_layout.addWidget(backup_root_label)
+
+    create_backup_button = QPushButton("Criar backup do slot selecionado")
+    create_backup_button.setObjectName("create_backup_button")
+    create_backup_button.setEnabled(False)
+    backup_layout.addWidget(create_backup_button)
+
+    backup_status_label = QLabel("Selecione um slot para criar um backup.")
+    backup_status_label.setObjectName("backup_status_label")
+    backup_status_label.setWordWrap(True)
+    backup_layout.addWidget(backup_status_label)
+
+    slot_side_layout = QVBoxLayout()
+    slot_side_layout.addWidget(save_slot_details_group)
+    slot_side_layout.addWidget(backup_group)
+    save_slots_layout.addLayout(slot_side_layout)
 
     layout.addWidget(save_slots_group)
 
@@ -437,8 +496,17 @@ def create_main_window(
     # Armazena a lista de resumos para mapeamento com os itens da lista
     _summaries_for_selection: list[SaveSlotSummary] = summaries
     details_loader = save_details_loader if save_details_loader is not None else inspect_save_slot
+    selected_summary: SaveSlotSummary | None = None
+    effective_backup_creator = backup_creator if backup_creator is not None else create_backup
+
+    def reset_backup_action() -> None:
+        nonlocal selected_summary
+        selected_summary = None
+        create_backup_button.setEnabled(False)
+        backup_status_label.setText("Selecione um slot para criar um backup.")
 
     def reset_save_slot_details() -> None:
+        reset_backup_action()
         save_slot_details_status_label.setText(
             "Selecione um slot para consultar os detalhes."
         )
@@ -469,6 +537,8 @@ def create_main_window(
             return False
 
         if not result.is_success:
+            replace_save_slot_summaries([])
+            empty_label.setText("Não foi possível carregar os saves.")
             return False
 
         empty_label.setText("Nenhum save encontrado")
@@ -477,9 +547,15 @@ def create_main_window(
 
     def on_item_selected() -> None:
         """Callback chamado quando um item é selecionado."""
+        nonlocal selected_summary
         current_row = save_slots_list.currentRow()
         if current_row >= 0 and current_row < len(_summaries_for_selection):
             summary = _summaries_for_selection[current_row]
+            selected_summary = summary
+            create_backup_button.setEnabled(True)
+            backup_status_label.setText(
+                f"Slot {summary.slot.number} selecionado. Pronto para criar backup."
+            )
             if on_slot_selected is not None:
                 on_slot_selected(summary)
             try:
@@ -500,7 +576,42 @@ def create_main_window(
 
         reset_save_slot_details()
 
+    def on_create_backup_clicked() -> None:
+        summary = selected_summary
+        if summary is None:
+            reset_backup_action()
+            return
+
+        create_backup_button.setEnabled(False)
+        backup_status_label.setText(
+            f"Criando backup do slot {summary.slot.number}..."
+        )
+        try:
+            result = effective_backup_creator(
+                summary.slot,
+                summary.slot.path.parent,
+                resolved_backup_root,
+            )
+        except Exception:
+            backup_status_label.setText(
+                "Não foi possível criar o backup. Feche o jogo e tente novamente."
+            )
+        else:
+            if result.is_success and result.backup is not None:
+                record = result.backup
+                plural = "arquivo" if record.file_count == 1 else "arquivos"
+                backup_status_label.setText(
+                    f"Backup {record.backup_id} criado com sucesso: "
+                    f"{record.file_count} {plural}, "
+                    f"{format_file_size(record.total_size_bytes)}."
+                )
+            else:
+                backup_status_label.setText(result.public_message)
+        finally:
+            create_backup_button.setEnabled(selected_summary is not None)
+
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
+    create_backup_button.clicked.connect(on_create_backup_clicked)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
     update_save_path_status(save_path_input.text())
