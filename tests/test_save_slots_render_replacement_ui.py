@@ -78,7 +78,10 @@ class TestSaveSlotsRenderReplacementUI:
         assert list_widget.item(0).text() == "save_2 — Slot 2 — 9 arquivos .tres"
 
     def test_resultado_vazio_remove_itens_anteriores(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que resultado vazio remove itens anteriores."""
         from mr_farmboy_manager.application import create_main_window
@@ -87,9 +90,6 @@ class TestSaveSlotsRenderReplacementUI:
         slot2 = SaveSlot(number=2, path=Path("save_2"))
         summary1 = SaveSlotSummary(slot=slot1, tres_file_count=4)
         summary2 = SaveSlotSummary(slot=slot2, tres_file_count=7)
-
-        def loader() -> list[SaveSlotSummary]:
-            return []
 
         call_count = 0
         def manual_loader(path: str) -> SaveSlotsLoadResult:
@@ -106,7 +106,8 @@ class TestSaveSlotsRenderReplacementUI:
                     summaries=(),
                 )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
