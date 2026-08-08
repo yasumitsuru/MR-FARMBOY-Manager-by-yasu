@@ -24,16 +24,16 @@ class TestDefaultManualLoaderFallback:
     """Testes do fallback do carregador manual usando load_save_slot_summaries."""
 
     def test_injected_loader_has_priority_over_fallback(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que loader injetado tem prioridade sobre o fallback."""
         from mr_farmboy_manager.application import create_main_window
 
         slot = SaveSlot(number=1, path=Path("save_1"))
         summary = SaveSlotSummary(slot=slot, tres_file_count=4)
-
-        def loader() -> list[SaveSlotSummary]:
-            return []
 
         call_count = 0
         def manual_loader(path: str) -> SaveSlotsLoadResult:
@@ -44,7 +44,8 @@ class TestDefaultManualLoaderFallback:
                 summaries=(summary,),
             )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
@@ -52,7 +53,7 @@ class TestDefaultManualLoaderFallback:
         assert button is not None
         assert list_widget is not None
 
-        # Estado inicial com lista vazia (loader=lambda: [])
+        # Estado inicial com lista vazia
         assert list_widget.count() == 0
 
         # Clique com manual_save_loader injetado - deve usar o loader, não o fallback
