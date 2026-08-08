@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QFileDialog,
+    QMessageBox,
 )
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
@@ -32,8 +33,10 @@ from mr_farmboy_manager.backups import (
     BackupDiscoveryResult,
     BackupErrorCode,
     BackupRecord,
+    BackupRestoreResult,
     create_backup,
     discover_backups,
+    restore_backup,
 )
 from mr_farmboy_manager.manual_paths import (
     SaveSlotsLoadResult,
@@ -80,6 +83,10 @@ SaveDetailsLoader = Callable[[SaveSlotSummary], SaveSlotDetails]
 BackupCreator = Callable[[SaveSlot, Path, Path], BackupCreationResult]
 
 BackupLoader = Callable[[Path], BackupDiscoveryResult]
+
+BackupRestorer = Callable[..., BackupRestoreResult]
+
+RestoreConfirmer = Callable[[BackupRecord], bool]
 
 
 ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
@@ -203,6 +210,8 @@ def create_main_window(
     save_details_loader: SaveDetailsLoader | None = None,
     backup_creator: BackupCreator | None = None,
     backup_loader: BackupLoader | None = None,
+    backup_restorer: BackupRestorer | None = None,
+    restore_confirmer: RestoreConfirmer | None = None,
     backup_root: Path | str | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
@@ -523,6 +532,18 @@ def create_main_window(
     backup_status_label.setWordWrap(True)
     backup_layout.addWidget(backup_status_label)
 
+    restore_backup_button = QPushButton("Restaurar backup selecionado")
+    restore_backup_button.setObjectName("restore_backup_button")
+    restore_backup_button.setEnabled(False)
+    backup_layout.addWidget(restore_backup_button)
+
+    backup_management_status_label = QLabel(
+        "Selecione um backup para restaurar."
+    )
+    backup_management_status_label.setObjectName("backup_management_status_label")
+    backup_management_status_label.setWordWrap(True)
+    backup_layout.addWidget(backup_management_status_label)
+
     slot_side_layout = QVBoxLayout()
     slot_side_layout.addWidget(save_slot_details_group)
     slot_side_layout.addWidget(backup_group)
@@ -540,10 +561,52 @@ def create_main_window(
     selected_summary: SaveSlotSummary | None = None
     effective_backup_creator = backup_creator if backup_creator is not None else create_backup
     effective_backup_loader = backup_loader if backup_loader is not None else discover_backups
+    effective_backup_restorer = (
+        backup_restorer if backup_restorer is not None else restore_backup
+    )
     _backups_for_selection: list[BackupRecord] = []
+    selected_backup: BackupRecord | None = None
+
+    def active_summary_for_backup(
+        record: BackupRecord,
+    ) -> SaveSlotSummary | None:
+        return next(
+            (
+                summary
+                for summary in _summaries_for_selection
+                if summary.slot.number == record.slot_number
+            ),
+            None,
+        )
+
+    def reset_backup_management() -> None:
+        nonlocal selected_backup
+        selected_backup = None
+        restore_backup_button.setEnabled(False)
+        backup_management_status_label.setText(
+            "Selecione um backup para restaurar."
+        )
+
+    def sync_restore_action() -> None:
+        record = selected_backup
+        if record is None:
+            restore_backup_button.setEnabled(False)
+            return
+        if active_summary_for_backup(record) is None:
+            restore_backup_button.setEnabled(False)
+            backup_management_status_label.setText(
+                f"O save ativo do Slot {record.slot_number} não está disponível."
+            )
+            return
+        restore_backup_button.setEnabled(True)
+        backup_management_status_label.setText(
+            f"Backup do Slot {record.slot_number} selecionado."
+        )
 
     def apply_backup_discovery_result(result: BackupDiscoveryResult) -> None:
         nonlocal _backups_for_selection
+
+        reset_backup_management()
 
         if not result.is_success:
             _backups_for_selection = []
@@ -597,6 +660,7 @@ def create_main_window(
         _summaries_for_selection = new_summaries
         reset_save_slot_details()
         render_save_slot_summaries(empty_label, save_slots_list, new_summaries)
+        sync_restore_action()
 
     def apply_manual_load_result(result: SaveSlotsLoadResult) -> bool:
         """Aplica um resultado manual e informa se ele e valido."""
@@ -652,6 +716,80 @@ def create_main_window(
 
         reset_save_slot_details()
 
+    def on_backup_selected() -> None:
+        nonlocal selected_backup
+        current_row = backups_list.currentRow()
+        if current_row < 0 or current_row >= len(_backups_for_selection):
+            reset_backup_management()
+            return
+
+        selected_backup = _backups_for_selection[current_row]
+        sync_restore_action()
+
+    def confirm_restore(record: BackupRecord) -> bool:
+        if restore_confirmer is not None:
+            return restore_confirmer(record)
+
+        created_at = record.created_at_utc.astimezone(timezone.utc).strftime(
+            "%Y-%m-%d %H:%M UTC"
+        )
+        answer = QMessageBox.warning(
+            window,
+            "Confirmar restauração",
+            "Esta ação substituirá o save ativo após criar um backup preventivo.\n\n"
+            f"Slot: {record.slot_number}\n"
+            f"Data do backup: {created_at}\n"
+            f"Tamanho: {format_file_size(record.total_size_bytes)}\n"
+            f"ID: {record.backup_id}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def on_restore_backup_clicked() -> None:
+        record = selected_backup
+        if record is None:
+            reset_backup_management()
+            return
+
+        summary = active_summary_for_backup(record)
+        if summary is None:
+            restore_backup_button.setEnabled(False)
+            backup_management_status_label.setText(
+                f"O save ativo do Slot {record.slot_number} não está disponível."
+            )
+            return
+        if not confirm_restore(record):
+            backup_management_status_label.setText("Restauração cancelada.")
+            return
+
+        restore_backup_button.setEnabled(False)
+        backup_management_status_label.setText(
+            f"Restaurando backup do Slot {record.slot_number}..."
+        )
+        try:
+            result = effective_backup_restorer(
+                summary.slot,
+                summary.slot.path.parent,
+                resolved_backup_root,
+                record.backup_id,
+                confirmed=True,
+            )
+        except Exception:
+            backup_management_status_label.setText(
+                "Não foi possível restaurar o backup. Feche o jogo e tente novamente."
+            )
+        else:
+            if result.is_success:
+                refresh_backups()
+                refresh_save_slots()
+            backup_management_status_label.setText(result.public_message)
+        finally:
+            if selected_backup is not None:
+                restore_backup_button.setEnabled(
+                    active_summary_for_backup(selected_backup) is not None
+                )
+
     def on_create_backup_clicked() -> None:
         summary = selected_summary
         if summary is None:
@@ -688,7 +826,9 @@ def create_main_window(
             create_backup_button.setEnabled(selected_summary is not None)
 
     save_slots_list.itemSelectionChanged.connect(on_item_selected)
+    backups_list.itemSelectionChanged.connect(on_backup_selected)
     create_backup_button.clicked.connect(on_create_backup_clicked)
+    restore_backup_button.clicked.connect(on_restore_backup_clicked)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
     refresh_backups()

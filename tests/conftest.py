@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 
 TEST_SAVE_PATH = Path(
@@ -54,6 +54,10 @@ def prevent_interactive_file_dialogs(
         dialog_calls.append("file dialog")
         return "", ""
 
+    def reject_message_box(*_args: object, **_kwargs: object):
+        dialog_calls.append("message box")
+        return QMessageBox.StandardButton.No
+
     monkeypatch.setattr(
         QFileDialog,
         "getExistingDirectory",
@@ -61,10 +65,11 @@ def prevent_interactive_file_dialogs(
     )
     monkeypatch.setattr(QFileDialog, "getOpenFileName", reject_file_dialog)
     monkeypatch.setattr(QFileDialog, "getSaveFileName", reject_file_dialog)
+    monkeypatch.setattr(QMessageBox, "warning", reject_message_box)
 
     yield
 
     assert dialog_calls == [], (
-        "QFileDialog real bloqueado: injete um chooser ou aplique mock no teste. "
+        "Diálogo Qt real bloqueado: injete um chooser/confirmador ou aplique mock no teste. "
         f"Chamadas: {', '.join(dialog_calls)}"
     )
