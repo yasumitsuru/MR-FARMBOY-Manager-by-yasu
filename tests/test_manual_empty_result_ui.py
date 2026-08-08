@@ -63,16 +63,13 @@ class TestManualEmptyResultUI:
         assert list_widget.count() == 0
 
     def test_mensagem_exata(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que mensagem exata é exibida após EMPTY."""
         from mr_farmboy_manager.application import create_main_window
-
-        slot = SaveSlot(number=1, path=Path("save_1"))
-        initial_summary = SaveSlotSummary(slot=slot, tres_file_count=4)
-
-        def loader() -> list[SaveSlotSummary]:
-            return [initial_summary]
 
         call_count = 0
         def manual_loader(path: str) -> SaveSlotsLoadResult:
@@ -83,7 +80,8 @@ class TestManualEmptyResultUI:
                 summaries=(),
             )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         label = window.findChild(QLabel, "empty_save_slots_label")
