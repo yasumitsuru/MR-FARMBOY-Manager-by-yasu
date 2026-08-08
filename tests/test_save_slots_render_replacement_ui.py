@@ -24,7 +24,10 @@ class TestSaveSlotsRenderReplacementUI:
     """Testes de substituição de itens na renderização de slots de save."""
 
     def test_segundo_resultado_substitui_o_primeiro(
-        self, qt_app: QApplication
+        self,
+        qt_app: QApplication,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Verifica que segundo clique substitui o primeiro resultado."""
         from mr_farmboy_manager.application import create_main_window
@@ -34,9 +37,6 @@ class TestSaveSlotsRenderReplacementUI:
         summary1_first = SaveSlotSummary(slot=slot1, tres_file_count=4)
         summary2_first = SaveSlotSummary(slot=slot2, tres_file_count=7)
         summary2_second = SaveSlotSummary(slot=slot2, tres_file_count=9)
-
-        def loader() -> list[SaveSlotSummary]:
-            return []
 
         call_count = 0
         def manual_loader(path: str) -> SaveSlotsLoadResult:
@@ -53,7 +53,8 @@ class TestSaveSlotsRenderReplacementUI:
                     summaries=(summary2_second,),
                 )
 
-        window = create_main_window(qt_app, loader=loader, manual_save_loader=manual_loader)
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        window = create_main_window(qt_app, manual_save_loader=manual_loader)
 
         button = window.findChild(QPushButton, "load_saves_button")
         list_widget = window.findChild(QListWidget)
