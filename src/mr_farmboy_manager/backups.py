@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .save_slots import SaveSlot
 
@@ -21,6 +21,7 @@ from .save_slots import SaveSlot
 BACKUP_MANIFEST_FILENAME = "manifest.json"
 BACKUP_PAYLOAD_DIRECTORY = "payload"
 BACKUP_SCHEMA_VERSION = 1
+MAX_BACKUP_MANIFEST_SIZE_BYTES = 32 * 1024 * 1024
 
 
 class BackupErrorCode(str, Enum):
@@ -44,6 +45,7 @@ class BackupErrorCode(str, Enum):
     VALIDATION_FAILED = "validation_failed"
     PUBLISH_FAILED = "publish_failed"
     CLEANUP_FAILED = "cleanup_failed"
+    DISCOVERY_FAILED = "discovery_failed"
 
 
 class BackupValidationError(ValueError):
@@ -119,6 +121,20 @@ class BackupCreationResult:
     @property
     def is_success(self) -> bool:
         return self.backup is not None and self.error_code is None
+
+
+@dataclass(frozen=True, slots=True)
+class BackupDiscoveryResult:
+    """Resultado ordenado e sanitizado da descoberta de backups."""
+
+    backups: tuple[BackupRecord, ...]
+    invalid_entries: tuple[str, ...]
+    error_code: BackupErrorCode | None
+    public_message: str
+
+    @property
+    def is_success(self) -> bool:
+        return self.error_code is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +436,242 @@ def create_backup(
             "O backup falhou e a pasta temporária não pôde ser removida.",
         )
     return result
+
+
+def discover_backups(backup_root: Path | str) -> BackupDiscoveryResult:
+    """Descobre manifestos válidos sem criar ou alterar a pasta de backups."""
+    try:
+        if isinstance(backup_root, str) and not backup_root.strip():
+            raise ValueError
+        root_input = Path(backup_root)
+        if not root_input.is_absolute():
+            raise ValueError
+        _reject_existing_reparse_components(
+            root_input,
+            BackupErrorCode.DISCOVERY_FAILED,
+            "A pasta de backups não é segura.",
+        )
+        if not os.path.lexists(root_input):
+            return BackupDiscoveryResult(
+                backups=(),
+                invalid_entries=(),
+                error_code=None,
+                public_message="Nenhum backup encontrado.",
+            )
+
+        root = root_input.resolve(strict=True)
+        root_state = os.lstat(root)
+        if not stat.S_ISDIR(root_state.st_mode) or _has_reparse_attribute(root_state):
+            raise ValueError
+
+        records: list[BackupRecord] = []
+        invalid_entries: list[str] = []
+        with os.scandir(root) as iterator:
+            entries = sorted(iterator, key=lambda entry: entry.name)
+        for entry in entries:
+            if entry.name.startswith(".staging-"):
+                continue
+            try:
+                records.append(_read_backup_record(root, Path(entry.path)))
+            except (BackupValidationError, _BackupOperationFailure, OSError, ValueError):
+                invalid_entries.append(entry.name)
+
+        records.sort(
+            key=lambda record: (record.created_at_utc, record.backup_id),
+            reverse=True,
+        )
+        invalid = tuple(sorted(invalid_entries))
+        if records:
+            message = f"{len(records)} backup(s) encontrado(s)."
+        else:
+            message = "Nenhum backup encontrado."
+        if invalid:
+            message += f" {len(invalid)} entrada(s) inválida(s) ignorada(s)."
+        return BackupDiscoveryResult(tuple(records), invalid, None, message)
+    except (BackupValidationError, _BackupOperationFailure, OSError, TypeError, ValueError):
+        return BackupDiscoveryResult(
+            backups=(),
+            invalid_entries=(),
+            error_code=BackupErrorCode.DISCOVERY_FAILED,
+            public_message="Não foi possível listar os backups.",
+        )
+
+
+def _read_backup_record(root: Path, directory: Path) -> BackupRecord:
+    directory_state = os.lstat(directory)
+    if (
+        not stat.S_ISDIR(directory_state.st_mode)
+        or _has_reparse_attribute(directory_state)
+        or directory.parent != root
+    ):
+        raise ValueError
+
+    parsed_slot, parsed_timestamp = _parse_backup_id(directory.name)
+    manifest_path = directory / BACKUP_MANIFEST_FILENAME
+    payload_path = directory / BACKUP_PAYLOAD_DIRECTORY
+    manifest_state = os.lstat(manifest_path)
+    payload_state = os.lstat(payload_path)
+    if (
+        not stat.S_ISREG(manifest_state.st_mode)
+        or _has_reparse_attribute(manifest_state)
+        or manifest_state.st_size > MAX_BACKUP_MANIFEST_SIZE_BYTES
+        or not stat.S_ISDIR(payload_state.st_mode)
+        or _has_reparse_attribute(payload_state)
+    ):
+        raise ValueError
+
+    raw = _read_manifest_bytes(manifest_path, manifest_state)
+    document = json.loads(raw.decode("utf-8"))
+    if not isinstance(document, dict) or set(document) != {
+        "schema_version",
+        "backup_id",
+        "slot_number",
+        "created_at_utc",
+        "file_count",
+        "total_size_bytes",
+        "files",
+    }:
+        raise ValueError
+    if (
+        not _is_plain_int(document["schema_version"])
+        or document["schema_version"] != BACKUP_SCHEMA_VERSION
+    ):
+        raise ValueError
+    if document["backup_id"] != directory.name:
+        raise ValueError
+    if not _is_plain_int(document["slot_number"]):
+        raise ValueError
+    if document["slot_number"] != parsed_slot:
+        raise ValueError
+
+    created_at = datetime.strptime(
+        _required_string(document["created_at_utc"]),
+        "%Y-%m-%dT%H:%M:%SZ",
+    ).replace(tzinfo=UTC)
+    if created_at != parsed_timestamp:
+        raise ValueError
+
+    files_value = document["files"]
+    if not isinstance(files_value, list):
+        raise ValueError
+    files = tuple(_parse_backup_file_record(value) for value in files_value)
+    relative_paths = [file.relative_path for file in files]
+    if len(relative_paths) != len(set(relative_paths)):
+        raise ValueError
+    if relative_paths != sorted(relative_paths):
+        raise ValueError
+    if (
+        not _is_plain_int(document["file_count"])
+        or document["file_count"] != len(files)
+        or not _is_plain_int(document["total_size_bytes"])
+        or document["total_size_bytes"] != sum(file.size_bytes for file in files)
+    ):
+        raise ValueError
+
+    payload_entries = _inventory_source_slot(payload_path)
+    payload_files = {
+        entry.relative_path: entry
+        for entry in payload_entries
+        if not entry.is_directory
+    }
+    if set(payload_files) != set(relative_paths):
+        raise ValueError
+    if any(
+        payload_files[file.relative_path].size_bytes != file.size_bytes
+        for file in files
+    ):
+        raise ValueError
+
+    return BackupRecord(
+        backup_id=directory.name,
+        slot_number=parsed_slot,
+        created_at_utc=created_at,
+        destination=directory,
+        file_count=len(files),
+        total_size_bytes=sum(file.size_bytes for file in files),
+    )
+
+
+def _read_manifest_bytes(
+    manifest_path: Path,
+    manifest_state: os.stat_result,
+) -> bytes:
+    expected = _source_entry(BACKUP_MANIFEST_FILENAME, manifest_state)
+    opened: _OpenedSource | None = None
+    try:
+        opened = _open_source_descriptor(manifest_path, expected)
+        remaining = MAX_BACKUP_MANIFEST_SIZE_BYTES + 1
+        chunks: list[bytes] = []
+        total = 0
+        while remaining > 0:
+            block = os.read(
+                opened.descriptor,
+                min(_COPY_CHUNK_SIZE, remaining),
+            )
+            if not block:
+                break
+            chunks.append(block)
+            total += len(block)
+            remaining -= len(block)
+        if total > MAX_BACKUP_MANIFEST_SIZE_BYTES:
+            raise ValueError
+        if _source_entry(
+            BACKUP_MANIFEST_FILENAME,
+            os.fstat(opened.descriptor),
+        ) != expected:
+            raise ValueError
+        _verify_windows_source_state(opened)
+        return b"".join(chunks)
+    finally:
+        if opened is not None:
+            try:
+                os.close(opened.descriptor)
+            except OSError:
+                if sys.exception() is None:
+                    raise ValueError from None
+
+
+def _parse_backup_file_record(value: object) -> BackupFileRecord:
+    if not isinstance(value, dict) or set(value) != {
+        "relative_path",
+        "size_bytes",
+        "modified_at_ns",
+        "sha256",
+    }:
+        raise ValueError
+    relative_path = _required_string(value["relative_path"])
+    parsed_path = PurePosixPath(relative_path)
+    if (
+        "\\" in relative_path
+        or parsed_path.is_absolute()
+        or not parsed_path.parts
+        or any(part in {"", ".", ".."} for part in parsed_path.parts)
+        or parsed_path.as_posix() != relative_path
+    ):
+        raise ValueError
+    size_bytes = value["size_bytes"]
+    modified_at_ns = value["modified_at_ns"]
+    sha256 = value["sha256"]
+    if (
+        not _is_plain_int(size_bytes)
+        or size_bytes < 0
+        or not _is_plain_int(modified_at_ns)
+        or modified_at_ns < 0
+        or not isinstance(sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
+    ):
+        raise ValueError
+    return BackupFileRecord(relative_path, size_bytes, modified_at_ns, sha256)
+
+
+def _required_string(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError
+    return value
+
+
+def _is_plain_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _inventory_source_slot(source: Path) -> tuple[_SourceEntry, ...]:
