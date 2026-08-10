@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import logging
+import os
 from datetime import timezone
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from PySide6.QtGui import QFontDatabase
-from PySide6.QtCore import QStandardPaths, Qt, QTimer
+from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
 
 from mr_farmboy_manager.backups import (
     BackupCreationResult,
@@ -58,6 +59,7 @@ from mr_farmboy_manager.settings import AppSettings, QtSettingsStore, SettingsSt
 
 
 LOGGER = logging.getLogger(__name__)
+RUNTIME_ROOT_ENVIRONMENT_VARIABLE = "MR_FARMBOY_RUNTIME_ROOT"
 
 
 def create_application() -> QApplication:
@@ -114,6 +116,14 @@ def default_backup_root() -> Path:
     if not base:
         raise RuntimeError("Diretório local do aplicativo indisponível.")
     return Path(base) / "backups"
+
+
+def runtime_root_from_environment() -> Path | None:
+    """Retorna um root portátil explícito para build, smoke e diagnóstico."""
+    configured = os.environ.get(RUNTIME_ROOT_ENVIRONMENT_VARIABLE, "").strip()
+    if not configured:
+        return None
+    return Path(configured).resolve(strict=False)
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -1110,10 +1120,26 @@ def run() -> int:
     Returns:
         Código de saída da aplicação (0 para sucesso).
     """
-    configure_logging()
-    LOGGER.info("application.startup")
     app = create_application()
-    window = create_main_window(app, settings_store=QtSettingsStore())
+    runtime_root = runtime_root_from_environment()
+    configure_logging(runtime_root / "logs" if runtime_root is not None else None)
+    LOGGER.info("application.startup")
+    if runtime_root is None:
+        settings_store = QtSettingsStore()
+        backup_root = None
+    else:
+        settings_store = QtSettingsStore(
+            QSettings(
+                str(runtime_root / "settings.ini"),
+                QSettings.Format.IniFormat,
+            )
+        )
+        backup_root = runtime_root / "backups"
+    window = create_main_window(
+        app,
+        settings_store=settings_store,
+        backup_root=backup_root,
+    )
     window.show()
     LOGGER.info("application.ready")
     exit_code = app.exec()
