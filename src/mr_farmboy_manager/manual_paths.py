@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from mr_farmboy_manager.save_slots import build_save_slot_summaries, SaveSlotSummary
+from mr_farmboy_manager.save_slots import (
+    build_save_slot_summaries,
+    discover_save_slots,
+    SaveSlotSummary,
+)
+
+
+_SAVE_SLOT_NAME = re.compile(r"^save_(\d+)$")
 
 
 class DirectoryValidationCode(StrEnum):
     """Códigos de status de validação de diretório."""
 
     VALID = "valid"
+    NORMALIZED = "normalized"
     EMPTY = "empty"
     NOT_FOUND = "not_found"
     NOT_DIRECTORY = "not_directory"
@@ -32,8 +41,11 @@ class DirectoryValidationResult:
 
     @property
     def is_valid(self) -> bool:
-        """Retorna True somente para VALID."""
-        return self.code == DirectoryValidationCode.VALID
+        """Retorna True para diretórios válidos ou normalizados."""
+        return self.code in {
+            DirectoryValidationCode.VALID,
+            DirectoryValidationCode.NORMALIZED,
+        }
 
 
 def validate_directory_path(
@@ -85,6 +97,30 @@ def validate_directory_path(
     )
 
 
+def validate_save_root_path(value: Path | str | None) -> DirectoryValidationResult:
+    """Valida um diretório de saves e normaliza um slot reconhecido à sua raiz."""
+    validation = validate_directory_path(value)
+    if not validation.is_valid or validation.path is None:
+        return validation
+
+    match = _SAVE_SLOT_NAME.fullmatch(validation.path.name)
+    if match is None:
+        return validation
+
+    slot_number = int(match.group(1))
+    candidates = discover_save_slots(validation.path.parent)
+    if any(
+        candidate.number == slot_number and candidate.path == validation.path
+        for candidate in candidates
+    ):
+        return DirectoryValidationResult(
+            DirectoryValidationCode.NORMALIZED,
+            validation.path.parent,
+        )
+
+    return validation
+
+
 @dataclass(frozen=True, slots=True)
 class SaveSlotsLoadResult:
     """Resultado do carregamento de slots de save.
@@ -115,7 +151,7 @@ def load_save_slot_summaries(
         SaveSlotsLoadResult com validação e resumos.
     """
     # 1. Validar o caminho
-    validation = validate_directory_path(save_path)
+    validation = validate_save_root_path(save_path)
 
     # 2. Se inválido, retornar sem chamar build_save_slot_summaries
     if not validation.is_valid:

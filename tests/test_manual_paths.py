@@ -227,6 +227,40 @@ class TestSaveSlotsLoadResult:
 class TestLoadSaveSlotSummaries:
     """Testes da função load_save_slot_summaries."""
 
+    def test_load_normalizes_recognized_slot_to_game_data(self, tmp_path: Path) -> None:
+        """Selecionar um slot reconhecido carrega os saves a partir de sua raiz."""
+        root = tmp_path / "game_data"
+        slot = root / "save_1"
+        slot.mkdir(parents=True)
+        (slot / "crop.tres").write_text("[gd_resource]", encoding="utf-8")
+
+        result = load_save_slot_summaries(slot)
+
+        assert result.validation.code is DirectoryValidationCode.NORMALIZED
+        assert result.validation.path == root
+        assert [item.slot.number for item in result.summaries] == [1]
+
+    def test_empty_existing_root_remains_valid_and_empty(self, tmp_path: Path) -> None:
+        """Uma raiz existente sem slots continua válida e retorna lista vazia."""
+        root = tmp_path / "game_data"
+        root.mkdir()
+
+        result = load_save_slot_summaries(root)
+
+        assert result.validation.code is DirectoryValidationCode.VALID
+        assert result.summaries == ()
+
+    def test_non_slot_directory_never_walks_to_parent(self, tmp_path: Path) -> None:
+        """Diretórios fora do padrão de slot nunca são normalizados ao pai."""
+        selected = tmp_path / "custom"
+        selected.mkdir()
+        (tmp_path / "save_2").mkdir()
+
+        result = load_save_slot_summaries(selected)
+
+        assert result.validation.path == selected
+        assert result.validation.code is DirectoryValidationCode.VALID
+
     def test_empty_path_does_not_call_build(self, tmp_path, monkeypatch):
         """Caminho vazio não chama build_save_slot_summaries."""
         called = []
