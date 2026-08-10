@@ -455,6 +455,113 @@ def test_create_backup_keeps_root_locked_while_opening_reserved_destination(
     assert result.backup.destination == destination
 
 
+@pytest.mark.skipif(os.name != "nt", reason="proteção Win32")
+def test_failed_create_cleanup_never_removes_swapped_staging_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mr_farmboy_manager.backups as backups_module
+
+    game_data, slot = _create_source_slot(tmp_path)
+    backup_root = tmp_path / "backups"
+    preserved_staging = backup_root / "preserved-staging"
+    real_remove = backups_module._remove_restore_directory
+    real_rename = backups_module.os.rename
+    swapped = False
+    replacement: Path | None = None
+
+    def fail_manifest(*_args, **_kwargs):
+        raise PermissionError("private-manifest-path")
+
+    def swap_then_remove(directory, *args, **kwargs):
+        nonlocal swapped, replacement
+        candidate = Path(directory)
+        if not swapped and candidate.name.startswith(".staging-"):
+            swapped = True
+            real_rename(candidate, preserved_staging)
+            candidate.mkdir()
+            replacement = candidate
+            (candidate / "foreign.txt").write_bytes(b"must-stay")
+        return real_remove(directory, *args, **kwargs)
+
+    monkeypatch.setattr(backups_module, "_write_manifest", fail_manifest)
+    monkeypatch.setattr(
+        backups_module,
+        "_remove_restore_directory",
+        swap_then_remove,
+    )
+    result = create_backup(
+        slot,
+        game_data,
+        backup_root,
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
+        suffix=SUFFIX_A,
+    )
+
+    assert swapped
+    assert not result.is_success
+    assert result.error_code is BackupErrorCode.CLEANUP_FAILED
+    assert replacement is not None
+    assert (replacement / "foreign.txt").read_bytes() == b"must-stay"
+    assert (preserved_staging / BACKUP_PAYLOAD_DIRECTORY).is_dir()
+    assert "private-manifest-path" not in result.public_message
+    assert str(tmp_path) not in result.public_message
+
+
+@pytest.mark.skipif(os.name != "nt", reason="proteção Win32")
+def test_failed_publish_cleanup_never_removes_swapped_reserved_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mr_farmboy_manager.backups as backups_module
+
+    game_data, slot = _create_source_slot(tmp_path)
+    backup_root = tmp_path / "backups"
+    backup_id = f"save_3-20260808T000000Z-{SUFFIX_A}"
+    destination = backup_root / backup_id
+    preserved_destination = backup_root / "preserved-destination"
+    real_remove = backups_module._remove_restore_directory
+    real_rename = backups_module.os.rename
+    swapped = False
+
+    def fail_publication(*_args, **_kwargs):
+        raise PermissionError("private-publish-path")
+
+    def swap_then_remove(directory, *args, **kwargs):
+        nonlocal swapped
+        candidate = Path(directory)
+        if not swapped and candidate == destination:
+            swapped = True
+            real_rename(candidate, preserved_destination)
+            candidate.mkdir()
+            (candidate / "foreign.txt").write_bytes(b"must-stay")
+        return real_remove(directory, *args, **kwargs)
+
+    monkeypatch.setattr(
+        backups_module,
+        "_publish_staged_backup_windows",
+        fail_publication,
+    )
+    monkeypatch.setattr(
+        backups_module,
+        "_remove_restore_directory",
+        swap_then_remove,
+    )
+    result = create_backup(
+        slot,
+        game_data,
+        backup_root,
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
+        suffix=SUFFIX_A,
+    )
+
+    assert swapped
+    assert not result.is_success
+    assert result.error_code is BackupErrorCode.CLEANUP_FAILED
+    assert (destination / "foreign.txt").read_bytes() == b"must-stay"
+    assert list(preserved_destination.iterdir()) == []
+    assert "private-publish-path" not in result.public_message
+    assert str(tmp_path) not in result.public_message
+
+
 def _symlink_directory_or_skip(link: Path, target: Path) -> None:
     try:
         link.symlink_to(target, target_is_directory=True)
@@ -866,7 +973,7 @@ def test_posix_backup_swap_immediately_after_resolution_is_rejected(
     assert list(external_manager.iterdir()) == []
 
 
-def test_create_backup_revalidates_payload_before_publication(
+def test_create_backup_preserves_staging_when_payload_changes_before_validation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import mr_farmboy_manager.backups as backups_module
@@ -892,5 +999,10 @@ def test_create_backup_revalidates_payload_before_publication(
     )
 
     assert not result.is_success
-    assert result.error_code is BackupErrorCode.VALIDATION_FAILED
-    assert list(backup_root.iterdir()) == []
+    assert result.error_code is BackupErrorCode.CLEANUP_FAILED
+    remaining = list(backup_root.iterdir())
+    assert len(remaining) == 1
+    assert remaining[0].name.startswith(".staging-")
+    assert (
+        remaining[0] / BACKUP_PAYLOAD_DIRECTORY / "player_data.tres"
+    ).read_bytes() == b"corrupt"

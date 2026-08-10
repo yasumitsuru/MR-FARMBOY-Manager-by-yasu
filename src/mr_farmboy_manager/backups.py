@@ -7,7 +7,6 @@ import json
 import os
 import re
 import secrets
-import shutil
 import stat
 import sys
 from collections.abc import Callable
@@ -332,6 +331,9 @@ def create_backup(
 ) -> BackupCreationResult:
     """Copia um slot para staging, valida e publica sem sobrescrever."""
     staging: Path | None = None
+    staging_identity: os.stat_result | None = None
+    staging_entries: tuple[_SourceEntry, ...] = ()
+    staging_expected_paths: set[str] = set()
     result: BackupCreationResult
 
     try:
@@ -397,10 +399,17 @@ def create_backup(
         staging = root / f".staging-{backup_id}-{secrets.token_hex(8)}"
         _assert_directory_chain(root_chain)
         staging.mkdir(exist_ok=False)
+        staging_identity = os.lstat(staging)
         staging_chain = _capture_directory_chain(staging)
         payload = staging / BACKUP_PAYLOAD_DIRECTORY
         _assert_directory_chain(staging_chain)
         payload.mkdir()
+        staging_expected_paths.add(BACKUP_PAYLOAD_DIRECTORY)
+        staging_entries = _refresh_trusted_staging_inventory(
+            staging,
+            staging_entries,
+            staging_expected_paths,
+        )
         payload_chain = _capture_directory_chain(payload)
 
         directories = [entry for entry in source_entries if entry.is_directory]
@@ -410,16 +419,34 @@ def create_backup(
             _assert_directory_chain(payload_chain)
             _assert_directory_chain(_capture_directory_chain(directory.parent))
             directory.mkdir(exist_ok=False)
-
-        copied_files = tuple(
-            _copy_regular_file(
-                source / Path(entry.relative_path),
-                payload / Path(entry.relative_path),
-                entry,
-                root_chain,
+            staging_expected_paths.add(
+                f"{BACKUP_PAYLOAD_DIRECTORY}/{entry.relative_path}"
             )
-            for entry in files
-        )
+            staging_entries = _refresh_trusted_staging_inventory(
+                staging,
+                staging_entries,
+                staging_expected_paths,
+            )
+
+        copied_file_records: list[BackupFileRecord] = []
+        for entry in files:
+            copied_file_records.append(
+                _copy_regular_file(
+                    source / Path(entry.relative_path),
+                    payload / Path(entry.relative_path),
+                    entry,
+                    root_chain,
+                )
+            )
+            staging_expected_paths.add(
+                f"{BACKUP_PAYLOAD_DIRECTORY}/{entry.relative_path}"
+            )
+            staging_entries = _refresh_trusted_staging_inventory(
+                staging,
+                staging_entries,
+                staging_expected_paths,
+            )
+        copied_files = tuple(copied_file_records)
 
         if _inventory_source_slot(source) != source_entries:
             raise _BackupOperationFailure(
@@ -438,12 +465,20 @@ def create_backup(
             manifest,
             root_chain,
         )
+        staging_expected_paths.add(BACKUP_MANIFEST_FILENAME)
+        staging_entries = _refresh_trusted_staging_inventory(
+            staging,
+            staging_entries,
+            staging_expected_paths,
+        )
         _validate_staged_backup(staging, manifest)
 
         _publish_staged_backup(
             staging,
             location.destination,
             root_chain,
+            staging_identity,
+            staging_entries,
         )
         staging = None
         record = BackupRecord(
@@ -474,10 +509,15 @@ def create_backup(
     if staging is not None and os.path.lexists(staging):
         try:
             _assert_directory_chain(root_chain)
-            current_staging = os.lstat(staging)
-            if _has_reparse_attribute(current_staging):
+            if staging_identity is None:
                 raise OSError
-            shutil.rmtree(staging)
+            _remove_restore_directory(
+                staging,
+                staging.parent,
+                root_chain,
+                staging_identity,
+                expected_entries=staging_entries,
+            )
         except (OSError, UnboundLocalError, _BackupOperationFailure):
             cleanup_failed = True
 
@@ -1831,6 +1871,42 @@ def _inventory_source_slot(source: Path) -> tuple[_SourceEntry, ...]:
     return tuple(entries)
 
 
+def _refresh_trusted_staging_inventory(
+    staging: Path,
+    previous_entries: tuple[_SourceEntry, ...],
+    expected_relative_paths: set[str],
+) -> tuple[_SourceEntry, ...]:
+    """Aceita somente a mutação recém-criada e rejeita entradas estrangeiras."""
+    try:
+        current_entries = _inventory_source_slot(staging)
+        current_by_path = {
+            entry.relative_path: entry for entry in current_entries
+        }
+        if set(current_by_path) != expected_relative_paths:
+            raise OSError
+        for previous in previous_entries:
+            current = current_by_path.get(previous.relative_path)
+            if current is None:
+                raise OSError
+            if previous.is_directory:
+                if (
+                    not current.is_directory
+                    or (current.device, current.inode)
+                    != (previous.device, previous.inode)
+                    or current.mode != previous.mode
+                    or current.file_attributes != previous.file_attributes
+                ):
+                    raise OSError
+            elif current != previous:
+                raise OSError
+        return current_entries
+    except (OSError, _BackupOperationFailure) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.COPY_FAILED,
+            "A pasta temporária mudou durante a criação do backup.",
+        ) from error
+
+
 def _source_entry(relative_path: str, state: os.stat_result) -> _SourceEntry:
     return _SourceEntry(
         relative_path=relative_path,
@@ -2286,17 +2362,20 @@ def _publish_staged_backup(
     staging: Path,
     destination: Path,
     backup_root_chain: tuple[_PathIdentity, ...],
+    expected_staging_state: os.stat_result,
+    expected_staging_entries: tuple[_SourceEntry, ...],
 ) -> None:
     reserved_state: os.stat_result | None = None
     root = destination.parent
     root_state: os.stat_result | None = None
-    staging_state: os.stat_result | None = None
-    staging_entries: tuple[_SourceEntry, ...] = ()
     try:
         _assert_directory_chain(backup_root_chain)
         root_state = os.lstat(root)
-        staging_state = os.lstat(staging)
-        staging_entries = _inventory_source_slot(staging)
+        if (
+            not _same_stat_identity(os.lstat(staging), expected_staging_state)
+            or _inventory_source_slot(staging) != expected_staging_entries
+        ):
+            raise OSError
         destination.mkdir(exist_ok=False)
         reserved_state = os.lstat(destination)
     except FileExistsError as error:
@@ -2314,7 +2393,6 @@ def _publish_staged_backup(
         _assert_directory_chain(backup_root_chain)
         if (
             root_state is None
-            or staging_state is None
             or reserved_state is None
             or os.name != "nt"
         ):
@@ -2324,27 +2402,29 @@ def _publish_staged_backup(
             destination,
             root,
             root_state,
-            staging_state,
+            expected_staging_state,
             reserved_state,
-            staging_entries,
+            expected_staging_entries,
         )
         _remove_restore_directory(
             staging,
             root,
             backup_root_chain,
-            staging_state,
+            expected_staging_state,
             expected_entries=(),
         )
-    except OSError as error:
+    except (OSError, _BackupOperationFailure) as error:
         try:
-            current_state = os.lstat(destination)
-            if (
-                _has_reparse_attribute(current_state)
-                or not _same_stat_identity(reserved_state, current_state)
-            ):
+            if reserved_state is None:
                 raise OSError
-            shutil.rmtree(destination)
-        except OSError as cleanup_error:
+            _remove_restore_directory(
+                destination,
+                root,
+                backup_root_chain,
+                reserved_state,
+                expected_entries=(),
+            )
+        except (OSError, _BackupOperationFailure) as cleanup_error:
             raise _BackupOperationFailure(
                 BackupErrorCode.CLEANUP_FAILED,
                 "O backup falhou e o destino incompleto não pôde ser removido.",
