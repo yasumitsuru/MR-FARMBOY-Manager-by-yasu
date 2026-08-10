@@ -18,9 +18,13 @@ from typing import Optional
 from .godot_tres import is_godot_tres_text, parse_godot_tres_structure
 from .save_snapshot import (
     MAX_SAVE_FILE_SIZE_BYTES,
+    InvalidSaveFileSizeLimitError,
     SaveFileSizeLimitError,
+    UnsafeSaveFileError,
     create_save_snapshot,
+    get_safe_file_size,
     read_limited_file,
+    validate_max_size_bytes,
 )
 
 
@@ -290,12 +294,25 @@ def _discover_format(data: bytes) -> SavedFormat:
 def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
     """Descobre a estrutura, convertendo o teto da fronteira em erro sanitizado."""
     try:
+        validate_max_size_bytes(MAX_INPUT_SIZE_BYTES)
         return _discover_save_structure(save_path)
     except SaveFileSizeLimitError:
         return SaveDiscoveryResult(
             success=False,
             detected_format=SavedFormat.UNKNOWN,
             error_message="Arquivo acima do limite de inspeção",
+        )
+    except InvalidSaveFileSizeLimitError:
+        return SaveDiscoveryResult(
+            success=False,
+            detected_format=SavedFormat.UNKNOWN,
+            error_message="Limite de leitura inválido.",
+        )
+    except UnsafeSaveFileError:
+        return SaveDiscoveryResult(
+            success=False,
+            detected_format=SavedFormat.UNKNOWN,
+            error_message="Arquivo de save inseguro.",
         )
 
 
@@ -323,7 +340,9 @@ def _discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
         )
 
     try:
-        initial_size = path.stat().st_size
+        initial_size = get_safe_file_size(
+            path, max_size_bytes=MAX_INPUT_SIZE_BYTES
+        )
     except PermissionError:
         return SaveDiscoveryResult(
             success=False, detected_format=SavedFormat.UNKNOWN, error_message="Sem permissão para ler"
@@ -357,14 +376,6 @@ def _discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
         snapshot_path = snapshot_info.snapshot_path
 
         try:
-            # Limite de entrada: verifica o tamanho do snapshot antes de carregar
-            snapshot_size = Path(snapshot_path).stat().st_size
-            if snapshot_size > MAX_INPUT_SIZE_BYTES:
-                return SaveDiscoveryResult(
-                    success=False, detected_format=SavedFormat.UNKNOWN,
-                    error_message="Arquivo acima do limite de inspeção"
-                )
-
             data = read_limited_file(snapshot_path, max_size_bytes=MAX_INPUT_SIZE_BYTES)
 
         except PermissionError:

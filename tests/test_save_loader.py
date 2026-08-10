@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import patch
 
 from mr_farmboy_manager.save_loader import load_save, validate_save_file, SaveLoadResult
+from mr_farmboy_manager.save_snapshot import MAX_SAVE_FILE_SIZE_BYTES
 
 
 class TestLoadSave:
@@ -40,6 +41,25 @@ class TestLoadSave:
         assert result.data is None
         assert result.size_bytes is None
         assert result.error_message == "Arquivo acima do limite de leitura."
+
+    @pytest.mark.parametrize("invalid_limit", [True, 0, "8", MAX_SAVE_FILE_SIZE_BYTES + 1])
+    def test_load_rejects_invalid_or_ceiling_bypassing_limit(
+        self, tmp_path: Path, invalid_limit: object
+    ) -> None:
+        test_file = tmp_path / "small.bin"
+        test_file.write_bytes(b"safe")
+
+        result = load_save(test_file, max_size_bytes=invalid_limit)
+
+        assert result.success is False
+        assert result.data is None
+        assert result.error_message == "Limite de leitura inválido."
+
+    def test_invalid_limit_takes_precedence_over_missing_path(self, tmp_path: Path) -> None:
+        result = load_save(tmp_path / "missing.bin", max_size_bytes=True)
+
+        assert result.success is False
+        assert result.error_message == "Limite de leitura inválido."
 
     def test_load_arquivo_invalido_retorna_success_false(self, tmp_path: Path) -> None:
         """Verifies that invalid path returns success=False."""
@@ -96,7 +116,10 @@ class TestLoadSave:
         test_data = b"test data"
         test_file.write_bytes(test_data)
 
-        with patch('builtins.open', side_effect=PermissionError("Permission denied")):
+        with patch(
+            'mr_farmboy_manager.save_snapshot.os.open',
+            side_effect=PermissionError("Permission denied"),
+        ):
             result = load_save(str(test_file))
 
         assert result.success is False

@@ -15,6 +15,7 @@ from mr_farmboy_manager.save_inspector import (
     DetectedFormat,
     SaveInspectionResult,
 )
+from mr_farmboy_manager.save_snapshot import MAX_SAVE_FILE_SIZE_BYTES
 
 
 class TestInspectSave:
@@ -44,6 +45,25 @@ class TestInspectSave:
         assert result.inspection_success is False
         assert result.readable_file is False
         assert result.error_message == "Arquivo acima do limite de leitura."
+
+    @pytest.mark.parametrize("invalid_limit", [True, 0, "8", MAX_SAVE_FILE_SIZE_BYTES + 1])
+    def test_inspection_rejects_invalid_or_ceiling_bypassing_limit(
+        self, tmp_path: Path, invalid_limit: object
+    ) -> None:
+        save_file = tmp_path / "small.bin"
+        save_file.write_bytes(b"safe")
+
+        result = inspect_save(save_file, max_size_bytes=invalid_limit)
+
+        assert result.inspection_success is False
+        assert result.readable_file is False
+        assert result.error_message == "Limite de leitura inválido."
+
+    def test_invalid_limit_takes_precedence_over_missing_path(self, tmp_path: Path) -> None:
+        result = inspect_save(tmp_path / "missing.bin", max_size_bytes=True)
+
+        assert result.inspection_success is False
+        assert result.error_message == "Limite de leitura inválido."
 
     def test_json_large(self, tmp_path: Path) -> None:
         """Verifica detecção de JSON com mais de 1000 caracteres."""
@@ -366,6 +386,46 @@ class TestHashAndIntegrity:
         # Calcula hash manualmente para comparação
         expected = hashlib.sha256(test_data).hexdigest()
         assert result == expected
+
+    def test_calculate_file_hash_rejects_input_above_injected_limit(self, tmp_path: Path) -> None:
+        test_file = tmp_path / "too_large.bin"
+        test_file.write_bytes(b"123456789")
+
+        with pytest.raises(ValueError, match="limite de leitura"):
+            calculate_file_hash(test_file, max_size_bytes=8)
+
+    def test_calculate_file_hash_rejects_growth_between_chunks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
+        test_file = tmp_path / "growing-hash.bin"
+        test_file.write_bytes(b"1234")
+        real_read = snapshot_module.os.read
+        first_read = True
+
+        def read_then_grow(descriptor: int, size: int) -> bytes:
+            nonlocal first_read
+            block = real_read(descriptor, size)
+            if first_read and block:
+                first_read = False
+                with open(test_file, "ab") as writer:
+                    writer.write(b"56789")
+            return block
+
+        monkeypatch.setattr(snapshot_module, "_READ_BLOCK_SIZE_BYTES", 2)
+        monkeypatch.setattr(snapshot_module.os, "read", read_then_grow)
+
+        with pytest.raises(ValueError, match="limite de leitura"):
+            calculate_file_hash(test_file, max_size_bytes=8)
+
+    def test_verify_file_integrity_returns_false_when_file_exceeds_limit(self, tmp_path: Path) -> None:
+        original = tmp_path / "original.bin"
+        snapshot = tmp_path / "snapshot.bin"
+        original.write_bytes(b"123456789")
+        snapshot.write_bytes(b"123456789")
+
+        assert verify_file_integrity(original, snapshot, max_size_bytes=8) is False
 
     def test_verify_file_integrity_same_content(self, tmp_path: Path) -> None:
         """Verifica que arquivos idênticos retornam True."""

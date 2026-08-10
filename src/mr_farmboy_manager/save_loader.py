@@ -9,7 +9,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NamedTuple
 
-from .save_snapshot import MAX_SAVE_FILE_SIZE_BYTES, SaveFileSizeLimitError, read_limited_file
+from .save_snapshot import (
+    MAX_SAVE_FILE_SIZE_BYTES,
+    InvalidSaveFileSizeLimitError,
+    SaveFileChangedError,
+    SaveFileSizeLimitError,
+    UnsafeSaveFileError,
+    read_limited_file,
+    validate_max_size_bytes,
+)
 
 
 class SaveLoadResult(NamedTuple):
@@ -41,6 +49,15 @@ def load_save(
         - size_bytes: tamanho em bytes do arquivo
         - data: conteúdo binário do arquivo (apenas leitura)
     """
+    try:
+        limit = validate_max_size_bytes(max_size_bytes)
+    except InvalidSaveFileSizeLimitError:
+        return SaveLoadResult(
+            path=str(Path(save_path).resolve()),
+            success=False,
+            error_message="Limite de leitura inválido."
+        )
+
     path = Path(save_path)
 
     # Normaliza o caminho para string absoluta
@@ -55,7 +72,7 @@ def load_save(
         )
 
     try:
-        data = read_limited_file(abs_path, max_size_bytes=max_size_bytes)
+        data = read_limited_file(abs_path, max_size_bytes=limit)
         size = len(data)
 
         # Validação de tamanho mínimo
@@ -89,6 +106,27 @@ def load_save(
             path=abs_path,
             success=False,
             error_message="Arquivo acima do limite de leitura."
+        )
+
+    except InvalidSaveFileSizeLimitError:
+        return SaveLoadResult(
+            path=abs_path,
+            success=False,
+            error_message="Limite de leitura inválido."
+        )
+
+    except UnsafeSaveFileError:
+        return SaveLoadResult(
+            path=abs_path,
+            success=False,
+            error_message="Arquivo de save inseguro."
+        )
+
+    except SaveFileChangedError:
+        return SaveLoadResult(
+            path=abs_path,
+            success=False,
+            error_message="Arquivo alterado durante a leitura."
         )
 
     except ValueError as e:

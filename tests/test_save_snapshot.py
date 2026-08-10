@@ -9,7 +9,9 @@ import pytest
 import shutil
 
 from mr_farmboy_manager.save_snapshot import (
+    MAX_SAVE_FILE_SIZE_BYTES,
     create_save_snapshot,
+    read_limited_file,
     SnapshotResult,
 )
 
@@ -35,22 +37,88 @@ class TestCreateSaveSnapshot:
             with create_save_snapshot(original_file, max_size_bytes=8):
                 pass
 
+    @pytest.mark.parametrize(
+        "invalid_limit",
+        [True, False, 0, -1, 1.5, "8", MAX_SAVE_FILE_SIZE_BYTES + 1],
+    )
+    def test_rejects_invalid_or_ceiling_bypassing_limit(
+        self, tmp_path: Path, invalid_limit: object
+    ) -> None:
+        save_file = tmp_path / "small.bin"
+        save_file.write_bytes(b"safe")
+
+        with pytest.raises(ValueError, match="Limite de leitura inválido"):
+            with create_save_snapshot(save_file, max_size_bytes=invalid_limit):
+                pass
+
+
+class TestLimitedReadBoundary:
+    def test_rejects_descriptor_with_different_identity(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
+        requested = tmp_path / "requested.bin"
+        requested.write_bytes(b"requested")
+        substituted = tmp_path / "substituted.bin"
+        substituted.write_bytes(b"private")
+        real_open = snapshot_module.os.open
+
+        def open_substituted(path, flags, *args, **kwargs):
+            if Path(path) == requested:
+                return real_open(substituted, flags, *args, **kwargs)
+            return real_open(path, flags, *args, **kwargs)
+
+        monkeypatch.setattr(snapshot_module.os, "open", open_substituted)
+
+        with pytest.raises(ValueError, match="Arquivo de save inseguro"):
+            read_limited_file(requested, max_size_bytes=32)
+
+    def test_rejects_growth_detected_from_open_descriptor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
+        save_file = tmp_path / "growing.bin"
+        save_file.write_bytes(b"1234")
+        real_read = snapshot_module.os.read
+        first_read = True
+
+        def read_then_grow(descriptor: int, size: int) -> bytes:
+            nonlocal first_read
+            block = real_read(descriptor, size)
+            if first_read and block:
+                first_read = False
+                with open(save_file, "ab") as writer:
+                    writer.write(b"56789")
+            return block
+
+        monkeypatch.setattr(snapshot_module, "_READ_BLOCK_SIZE_BYTES", 2)
+        monkeypatch.setattr(snapshot_module.os, "read", read_then_grow)
+
+        with pytest.raises(ValueError, match="limite de leitura"):
+            read_limited_file(save_file, max_size_bytes=8)
+
     def test_rejects_source_that_grows_during_limited_copy(self, tmp_path: Path, monkeypatch) -> None:
         """A source growing between chunks must abort before copying beyond the limit."""
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
         original_file = tmp_path / "growing.bin"
         original_file.write_bytes(b"1234")
-        real_stat = Path.stat
-        source_stat_calls = 0
+        real_read = snapshot_module.os.read
+        first_read = True
 
-        def grow_after_first_chunk(path: Path, *args, **kwargs):
-            nonlocal source_stat_calls
-            if path == original_file:
-                source_stat_calls += 1
-                if source_stat_calls == 5:
-                    original_file.write_bytes(b"123456789")
-            return real_stat(path, *args, **kwargs)
+        def read_then_grow(descriptor: int, size: int) -> bytes:
+            nonlocal first_read
+            block = real_read(descriptor, size)
+            if first_read and block:
+                first_read = False
+                with open(original_file, "ab") as writer:
+                    writer.write(b"56789")
+            return block
 
-        monkeypatch.setattr(Path, "stat", grow_after_first_chunk)
+        monkeypatch.setattr(snapshot_module, "_READ_BLOCK_SIZE_BYTES", 2)
+        monkeypatch.setattr(snapshot_module.os, "read", read_then_grow)
 
         with pytest.raises(ValueError, match="limite de leitura"):
             with create_save_snapshot(original_file, max_size_bytes=8):
@@ -260,12 +328,19 @@ class TestCreateSaveSnapshot:
         original_data = b'test data'
         original_file.write_bytes(original_data)
 
+        removal_blocked = False
         try:
             with create_save_snapshot(original_file) as result:
                 assert isinstance(result, SnapshotResult)
                 # Remove o arquivo original durante o contexto
-                original_file.unlink()
+                try:
+                    original_file.unlink()
+                except PermissionError:
+                    # Windows pode impedir a remoção enquanto o descritor estável está aberto.
+                    removal_blocked = True
 
+            if removal_blocked:
+                return
             assert False, "Deve ter lançado FileNotFoundError"
         except FileNotFoundError as e:
             # Verifica que a mensagem menciona o desaparecimento

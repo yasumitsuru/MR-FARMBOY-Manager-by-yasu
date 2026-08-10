@@ -14,7 +14,16 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
-from .save_snapshot import MAX_SAVE_FILE_SIZE_BYTES, SaveFileSizeLimitError, read_limited_file
+from .save_snapshot import (
+    MAX_SAVE_FILE_SIZE_BYTES,
+    InvalidSaveFileSizeLimitError,
+    SaveFileChangedError,
+    SaveFileSizeLimitError,
+    UnsafeSaveFileError,
+    calculate_limited_file_hash,
+    read_limited_file,
+    validate_max_size_bytes,
+)
 
 
 class DetectedFormat(Enum):
@@ -218,6 +227,16 @@ def inspect_save(
     Returns:
         SaveInspectionResult com metadados do arquivo.
     """
+    try:
+        limit = validate_max_size_bytes(max_size_bytes)
+    except InvalidSaveFileSizeLimitError:
+        return SaveInspectionResult(
+            readable_file=False,
+            detected_format=DetectedFormat.UNKNOWN,
+            inspection_success=False,
+            error_message="Limite de leitura inválido."
+        )
+
     file_path = Path(path)
 
     # Validação básica: deve apontar para um arquivo
@@ -231,7 +250,7 @@ def inspect_save(
 
     try:
         # Leitura limitada em blocos: nunca materializa conteúdo acima do teto.
-        data = read_limited_file(file_path, max_size_bytes=max_size_bytes)
+        data = read_limited_file(file_path, max_size_bytes=limit)
     except PermissionError:
         return SaveInspectionResult(
             readable_file=False,
@@ -245,6 +264,27 @@ def inspect_save(
             detected_format=DetectedFormat.UNKNOWN,
             inspection_success=False,
             error_message="Arquivo acima do limite de leitura."
+        )
+    except InvalidSaveFileSizeLimitError:
+        return SaveInspectionResult(
+            readable_file=False,
+            detected_format=DetectedFormat.UNKNOWN,
+            inspection_success=False,
+            error_message="Limite de leitura inválido."
+        )
+    except UnsafeSaveFileError:
+        return SaveInspectionResult(
+            readable_file=False,
+            detected_format=DetectedFormat.UNKNOWN,
+            inspection_success=False,
+            error_message="Arquivo de save inseguro."
+        )
+    except SaveFileChangedError:
+        return SaveInspectionResult(
+            readable_file=False,
+            detected_format=DetectedFormat.UNKNOWN,
+            inspection_success=False,
+            error_message="Arquivo alterado durante a leitura."
         )
     except IOError as e:
         return SaveInspectionResult(
@@ -307,7 +347,12 @@ def inspect_save(
         )
 
 
-def verify_file_integrity(original_path: str | Path, snapshot_path: str | Path) -> bool:
+def verify_file_integrity(
+    original_path: str | Path,
+    snapshot_path: str | Path,
+    *,
+    max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES,
+) -> bool:
     """Verifica se dois arquivos têm o mesmo conteúdo SHA-256.
 
     Compara os hashes SHA-256 do original e do snapshot para garantir
@@ -321,15 +366,21 @@ def verify_file_integrity(original_path: str | Path, snapshot_path: str | Path) 
         True se os hashes forem idênticos, False caso contrário.
     """
     try:
-        original_hash = calculate_file_hash(original_path)
-        snapshot_hash = calculate_file_hash(snapshot_path)
+        original_hash = calculate_file_hash(
+            original_path, max_size_bytes=max_size_bytes
+        )
+        snapshot_hash = calculate_file_hash(
+            snapshot_path, max_size_bytes=max_size_bytes
+        )
 
         return original_hash == snapshot_hash
     except Exception:
         return False
 
 
-def calculate_file_hash(filepath: str | Path) -> str:
+def calculate_file_hash(
+    filepath: str | Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES
+) -> str:
     """Calcula o hash SHA-256 de um arquivo lendo em blocos.
 
     Não carrega o arquivo inteiro em memória, calculando o hash em
@@ -342,12 +393,6 @@ def calculate_file_hash(filepath: str | Path) -> str:
     Returns:
         String hexadecimal com o hash SHA-256 (64 caracteres).
     """
-    sha256_hash = hashlib.sha256()
-    block_size = 65536  # 64 KB por bloco
-    path = Path(filepath)
-
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(block_size), b""):
-            sha256_hash.update(block)
-
-    return sha256_hash.hexdigest()
+    return calculate_limited_file_hash(
+        filepath, max_size_bytes=max_size_bytes
+    )

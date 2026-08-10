@@ -228,6 +228,82 @@ class TestFileValidation:
         assert save_file.exists()
         assert save_file.read_bytes() == content
 
+    def test_input_limit_alias_cannot_raise_the_public_ceiling(self, tmp_path, monkeypatch):
+        import mr_farmboy_manager.save_discovery as sd_module
+
+        save_file = tmp_path / "small.json"
+        save_file.write_text('{"safe": true}', encoding="utf-8")
+        monkeypatch.setattr(
+            sd_module,
+            "MAX_INPUT_SIZE_BYTES",
+            sd_module.MAX_SAVE_FILE_SIZE_BYTES + 1,
+        )
+
+        result = discover_save_structure(save_file)
+
+        assert result.success is False
+        assert result.error_message == "Limite de leitura inválido."
+
+    def test_reparse_boundary_is_rejected_with_sanitized_error(self, tmp_path, monkeypatch):
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
+        save_file = tmp_path / "linked-save.json"
+        save_file.write_text('{"safe": true}', encoding="utf-8")
+        real_lstat = snapshot_module.os.lstat
+
+        class ReparseStat:
+            def __init__(self, wrapped) -> None:
+                self._wrapped = wrapped
+                self.st_file_attributes = (
+                    getattr(wrapped, "st_file_attributes", 0) | 0x400
+                )
+
+            def __getattr__(self, name: str):
+                return getattr(self._wrapped, name)
+
+        def lstat_with_reparse(path):
+            state = real_lstat(path)
+            if Path(path) == save_file:
+                return ReparseStat(state)
+            return state
+
+        monkeypatch.setattr(snapshot_module.os, "lstat", lstat_with_reparse)
+
+        result = discover_save_structure(save_file)
+
+        assert result.success is False
+        assert result.error_message == "Arquivo de save inseguro."
+
+    def test_empty_reparse_is_rejected_before_empty_result(self, tmp_path, monkeypatch):
+        import mr_farmboy_manager.save_snapshot as snapshot_module
+
+        save_file = tmp_path / "empty-link.dat"
+        save_file.write_bytes(b"")
+        real_lstat = snapshot_module.os.lstat
+
+        class ReparseStat:
+            def __init__(self, wrapped) -> None:
+                self._wrapped = wrapped
+                self.st_file_attributes = (
+                    getattr(wrapped, "st_file_attributes", 0) | 0x400
+                )
+
+            def __getattr__(self, name: str):
+                return getattr(self._wrapped, name)
+
+        def lstat_with_reparse(path):
+            state = real_lstat(path)
+            if Path(path) == save_file:
+                return ReparseStat(state)
+            return state
+
+        monkeypatch.setattr(snapshot_module.os, "lstat", lstat_with_reparse)
+
+        result = discover_save_structure(save_file)
+
+        assert result.success is False
+        assert result.error_message == "Arquivo de save inseguro."
+
 
 class TestSanitization:
     """Testes de sanitização do relatório."""
