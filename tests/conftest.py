@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 
 TEST_SAVE_PATH = Path(
@@ -23,6 +24,13 @@ TEST_GAME_PATH = Path(
         r"W:\Games\Steam\steamapps\common\MrFarmBoy",
     )
 )
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    """Instância Qt compartilhada, sem iniciar o loop de eventos."""
+    app = QApplication.instance()
+    return app if app is not None else QApplication([])
 
 
 @pytest.fixture(scope="session")
