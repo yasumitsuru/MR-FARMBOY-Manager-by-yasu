@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QObject, QMetaObject, Qt, qInstallMessageHandler
+from PySide6.QtQuickControls2 import QQuickStyle
 
 
 def _find(root: QObject, name: str) -> QObject:
@@ -14,6 +15,10 @@ def _find(root: QObject, name: str) -> QObject:
 
 def _show_saves(root: QObject) -> None:
     _find(root, "appShell").setProperty("currentIndex", 1)
+
+
+def test_basic_style_is_selected_before_any_qapplication_fixture() -> None:
+    assert QQuickStyle.name() == "Basic"
 
 
 def test_python_state_reaches_dashboard_and_saves(qapp, qml_shell, fake_controller) -> None:

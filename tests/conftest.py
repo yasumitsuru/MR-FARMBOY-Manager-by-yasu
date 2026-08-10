@@ -6,10 +6,12 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
+# O estilo precisa ser conhecido antes de qualquer import/criação do QApplication.
+os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+
 import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtWidgets import QApplication
-from PySide6.QtQuickControls2 import QQuickStyle
 
 
 TEST_SAVE_PATH = Path(
@@ -33,7 +35,6 @@ def qapp() -> QApplication:
     app = QApplication.instance()
     if app is not None:
         return app
-    QQuickStyle.setStyle("Basic")
     return QApplication([])
 
 
