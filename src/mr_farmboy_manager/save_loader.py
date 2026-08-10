@@ -129,11 +129,11 @@ def load_save(
             error_message="Arquivo alterado durante a leitura."
         )
 
-    except ValueError as e:
+    except ValueError:
         return SaveLoadResult(
             path=abs_path,
             success=False,
-            error_message=str(e)
+            error_message="O arquivo está vazio ou possui conteúdo inválido."
         )
 
 

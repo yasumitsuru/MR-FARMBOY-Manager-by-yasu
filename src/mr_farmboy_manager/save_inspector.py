@@ -245,7 +245,7 @@ def inspect_save(
             readable_file=False,
             detected_format=DetectedFormat.UNKNOWN,
             inspection_success=False,
-            error_message=f"Caminho não aponta para um arquivo válido: {path}"
+            error_message="O caminho não aponta para um arquivo válido."
         )
 
     try:
@@ -286,12 +286,12 @@ def inspect_save(
             inspection_success=False,
             error_message="Arquivo alterado durante a leitura."
         )
-    except IOError as e:
+    except IOError:
         return SaveInspectionResult(
             readable_file=False,
             detected_format=DetectedFormat.UNKNOWN,
             inspection_success=False,
-            error_message=f"Erro ao ler arquivo: {e}"
+            error_message="Não foi possível ler o arquivo."
         )
 
     # Validação de tamanho mínimo (arquivo deve ter pelo menos 1 byte)
@@ -338,12 +338,12 @@ def inspect_save(
             error_message=None
         )
 
-    except Exception as e:
+    except Exception:
         return SaveInspectionResult(
             readable_file=True,
             detected_format=DetectedFormat.UNKNOWN,
             inspection_success=False,
-            error_message=f"Erro durante inspeção: {e}"
+            error_message="Não foi possível inspecionar o arquivo."
         )
 
 

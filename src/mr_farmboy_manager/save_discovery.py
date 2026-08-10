@@ -81,6 +81,10 @@ MAX_ENTRY_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB por entrada
 MAX_INPUT_SIZE_BYTES = MAX_SAVE_FILE_SIZE_BYTES
 
 
+class _SanitizedDiscoveryError(ValueError):
+    """Falha de validação cuja mensagem é segura para exibição pública."""
+
+
 def _estimate_textual_ratio(content: str) -> float:
     """Estima a proporção de caracteres imprimíveis no conteúdo."""
     if not content:
@@ -125,7 +129,9 @@ def _validate_zip_structure(zip_path: str | Path) -> tuple[int, bool]:
         for info in zf.infolist():
             # Rejeitar imediatamente se houver mais de MAX_ZIP_ENTRIES entradas
             if entry_count >= MAX_ZIP_ENTRIES:
-                raise ValueError("ZIP com mais de 1000 entradas - limite excedido")
+                raise _SanitizedDiscoveryError(
+                    "ZIP com mais de 1000 entradas - limite excedido"
+                )
 
             if info.flag_bits & 0x1:
                 is_encrypted = True
@@ -135,7 +141,9 @@ def _validate_zip_structure(zip_path: str | Path) -> tuple[int, bool]:
 
             # Verificar limite por entrada (10 MB)
             if entry_size > MAX_ENTRY_SIZE_BYTES:
-                raise ValueError("Entrada ZIP individual acima de 10 MB")
+                raise _SanitizedDiscoveryError(
+                    "Entrada ZIP individual acima de 10 MB"
+                )
 
             total_compressed_size += entry_size
 
@@ -143,7 +151,9 @@ def _validate_zip_structure(zip_path: str | Path) -> tuple[int, bool]:
 
         # Rejeitar se total superar 100 MB
         if total_compressed_size > MAX_DECOMPRESSED_SIZE_BYTES:
-            raise ValueError("Tamanho descompactado total acima de 100 MB")
+            raise _SanitizedDiscoveryError(
+                "Tamanho descompactado total acima de 100 MB"
+            )
 
         return entry_count, is_encrypted
 
@@ -170,9 +180,9 @@ def _get_aggregated_extensions(zip_path: str | Path) -> set[str]:
                     continue
                 extensions.add(ext)
     except zipfile.BadZipFile:
-        raise ValueError("Arquivo ZIP inválido")
+        raise _SanitizedDiscoveryError("Arquivo ZIP inválido")
     except OSError:
-        raise ValueError("Erro ao ler arquivo ZIP")
+        raise _SanitizedDiscoveryError("Erro ao ler arquivo ZIP")
     return extensions
 
 
@@ -214,8 +224,8 @@ def _validate_sqlite_structure(snapshot_path: str | Path) -> int | None:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         table_count = len(cursor.fetchall())
         return table_count
-    except sqlite3.Error as e:
-        raise ValueError(f"Arquivo SQLite inválido: {e}")
+    except sqlite3.Error:
+        raise _SanitizedDiscoveryError("Arquivo SQLite inválido")
     finally:
         # Fechamento garantido mesmo em caso de erro de validação
         if cursor is not None:
@@ -480,11 +490,15 @@ def _discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                 sanitized_notes=tuple(sanitized_notes)
             )
 
-        except ValueError as e:
-            # Retornar erro sanitizado para violações de limites
+        except _SanitizedDiscoveryError as exc:
             return SaveDiscoveryResult(
                 success=False, detected_format=detected_format or SavedFormat.UNKNOWN,
-                error_message=str(e)
+                error_message=str(exc)
+            )
+        except ValueError:
+            return SaveDiscoveryResult(
+                success=False, detected_format=detected_format or SavedFormat.UNKNOWN,
+                error_message="Não foi possível analisar a estrutura do arquivo."
             )
         except Exception as e:
             return SaveDiscoveryResult(
