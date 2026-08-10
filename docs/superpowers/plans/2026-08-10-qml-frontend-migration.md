@@ -797,9 +797,17 @@ def test_build_collects_qml_runtime_plugins() -> None:
     assert "PySide6.QtQuickControls2" in joined
 
 
-def test_entrypoint_uses_qml_application() -> None:
-    source = Path("tools/windows_entrypoint.py").read_text(encoding="utf-8")
-    assert "mr_farmboy_manager.qml_application import run" in source
+def test_windows_entrypoint_delegates_exit_code_to_qml_run(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        mr_farmboy_manager.qml_application,
+        "run",
+        lambda: calls.append("run") or 23,
+    )
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path("tools/windows_entrypoint.py", run_name="__main__")
+    assert raised.value.code == 23
+    assert calls == ["run"]
 ```
 
 - [ ] **Step 2: Run RED**
