@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import ".." as AppTheme
+import "../pages"
 
 Item {
     id: shell
@@ -86,7 +87,11 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 currentIndex: shell.currentIndex
-                Repeater { model: 5; Item { Accessible.name: shell.pageTitles[index] } }
+                DashboardPage { controller: shell.controller; shell: shell }
+                SavesPage { controller: shell.controller; shell: shell }
+                Item { Accessible.name: shell.pageTitles[2] }
+                Item { Accessible.name: shell.pageTitles[3] }
+                Item { Accessible.name: shell.pageTitles[4] }
             }
         }
     }

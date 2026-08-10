@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtWidgets import QApplication
+from PySide6.QtQuickControls2 import QQuickStyle
 
 
 TEST_SAVE_PATH = Path(
@@ -30,7 +31,10 @@ TEST_GAME_PATH = Path(
 def qapp() -> QApplication:
     """Instância Qt compartilhada, sem iniciar o loop de eventos."""
     app = QApplication.instance()
-    return app if app is not None else QApplication([])
+    if app is not None:
+        return app
+    QQuickStyle.setStyle("Basic")
+    return QApplication([])
 
 
 @pytest.fixture(scope="session")
