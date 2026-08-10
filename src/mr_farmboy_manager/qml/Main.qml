@@ -14,6 +14,7 @@ ApplicationWindow {
     title: "MR FARMBOY Manager"
 
     AppShell {
+        objectName: "appShell"
         anchors.fill: parent
         controller: appController
     }

@@ -8,8 +8,8 @@ Item {
     property var controller
     property int currentIndex: 0
     readonly property bool wideNavigation: width >= 1200
-    readonly property bool railNavigation: width >= 900 && width < 1200
-    readonly property bool drawerNavigation: width < 900
+    readonly property bool railNavigation: width >= 1000 && width < 1200
+    readonly property bool drawerNavigation: width < 1000
     readonly property var pageTitles: ["Visão do cultivo", "Saves", "Backups", "Configurações", "Diagnósticos"]
     readonly property var pageSymbols: ["◉", "▤", "▣", "⚙", "⌁"]
 
@@ -36,18 +36,11 @@ Item {
                 spacing: AppTheme.Theme.space12
                 Text { text: shell.wideNavigation ? "MR FARMBOY" : "MR"; color: AppTheme.Theme.textPrimary; font.family: AppTheme.Theme.displayFont; font.pixelSize: shell.wideNavigation ? AppTheme.Theme.typeCardTitle : AppTheme.Theme.typeBody; font.weight: AppTheme.Theme.weightBold; Layout.fillWidth: true; horizontalAlignment: shell.wideNavigation ? Text.AlignLeft : Text.AlignHCenter }
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: AppTheme.Theme.borderWidth; color: AppTheme.Theme.border }
-                Repeater {
-                    model: 5
-                    SidebarItem {
-                        objectName: ["navDashboard", "navSaves", "navBackups", "navSettings", "navDiagnostics"][index]
-                        Layout.fillWidth: true
-                        compact: shell.railNavigation
-                        label: shell.pageTitles[index]
-                        symbol: shell.pageSymbols[index]
-                        selected: shell.currentIndex === index
-                        onActivated: shell.navigate(index)
-                    }
-                }
+                SidebarItem { objectName: "navDashboard"; Layout.fillWidth: true; compact: shell.railNavigation; label: shell.pageTitles[0]; symbol: shell.pageSymbols[0]; selected: shell.currentIndex === 0; onActivated: shell.navigate(0) }
+                SidebarItem { objectName: "navSaves"; Layout.fillWidth: true; compact: shell.railNavigation; label: shell.pageTitles[1]; symbol: shell.pageSymbols[1]; selected: shell.currentIndex === 1; onActivated: shell.navigate(1) }
+                SidebarItem { objectName: "navBackups"; Layout.fillWidth: true; compact: shell.railNavigation; label: shell.pageTitles[2]; symbol: shell.pageSymbols[2]; selected: shell.currentIndex === 2; onActivated: shell.navigate(2) }
+                SidebarItem { objectName: "navSettings"; Layout.fillWidth: true; compact: shell.railNavigation; label: shell.pageTitles[3]; symbol: shell.pageSymbols[3]; selected: shell.currentIndex === 3; onActivated: shell.navigate(3) }
+                SidebarItem { objectName: "navDiagnostics"; Layout.fillWidth: true; compact: shell.railNavigation; label: shell.pageTitles[4]; symbol: shell.pageSymbols[4]; selected: shell.currentIndex === 4; onActivated: shell.navigate(4) }
                 Item { Layout.fillHeight: true }
                 StatusBadge { Layout.fillWidth: true; status: shell.controller && shell.controller.busy ? "warning" : "success"; label: shell.controller && shell.controller.busy ? "Atualizando" : "Pronto" }
             }
@@ -66,7 +59,7 @@ Item {
                     anchors.fill: parent
                     anchors.margins: AppTheme.Theme.space16
                     spacing: AppTheme.Theme.space12
-                    AppButton { visible: shell.drawerNavigation; text: "Menu"; tooltipText: "Abrir navegação"; onClicked: drawer.open() }
+                    AppButton { objectName: "navMenuButton"; visible: shell.drawerNavigation; text: "Menu"; tooltipText: "Abrir navegação"; onClicked: drawer.open() }
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: AppTheme.Theme.space4
@@ -84,7 +77,7 @@ Item {
                             font.pixelSize: AppTheme.Theme.typeMeta
                         }
                     }
-                    Text { text: shell.controller && shell.controller.dashboard ? shell.controller.dashboard.lastUpdatedLabel : "Não disponível"; color: AppTheme.Theme.textMuted; font.family: AppTheme.Theme.utilityFont; font.pixelSize: AppTheme.Theme.typeMeta; visible: width > 430 }
+                    Text { objectName: "lastUpdatedLabel"; text: shell.controller && shell.controller.dashboard ? shell.controller.dashboard.lastUpdatedLabel : "Não disponível"; color: AppTheme.Theme.textMuted; font.family: AppTheme.Theme.utilityFont; font.pixelSize: AppTheme.Theme.typeMeta; visible: shell.width >= 1200 }
                 }
             }
             StackLayout {

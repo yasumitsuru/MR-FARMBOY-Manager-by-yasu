@@ -39,9 +39,9 @@ def run(*, start_event_loop: bool = True) -> int:
     """Inicializa a UI e sempre encerra o executor do controller."""
     application = create_qml_application()
     controller = create_controller()
-    controller.initialize()
-    engine = create_engine(controller)
     try:
+        controller.initialize()
+        engine = create_engine(controller)
         if not engine.rootObjects():
             return 1
         return application.exec() if start_event_loop else 0

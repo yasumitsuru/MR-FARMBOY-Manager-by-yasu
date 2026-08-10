@@ -26,6 +26,12 @@ class FakeViewModel(QObject):
     errorMessage = Property(str, lambda self: self._error_message, notify=changed)
 
 
+class FakeDashboardViewModel(FakeViewModel):
+    """Snapshot completo consumido pelo shell antes das páginas reais."""
+
+    lastUpdatedLabel = Property(str, lambda self: "10/08/2026 14:30", constant=True)
+
+
 class FakeController(QObject):
     """Controller de composição usado pelo bootstrap QML."""
 
@@ -35,7 +41,7 @@ class FakeController(QObject):
         super().__init__()
         self.shutdown_calls = 0
         self.initialize_calls = 0
-        self._dashboard = FakeViewModel()
+        self._dashboard = FakeDashboardViewModel()
         self._saves = FakeViewModel()
         self._backups = FakeViewModel()
         self._settings = FakeViewModel()
