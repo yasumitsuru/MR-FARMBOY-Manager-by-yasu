@@ -364,6 +364,97 @@ def test_create_backup_never_replaces_preexisting_empty_destination(
     assert not any(path.name.startswith(".staging-") for path in backup_root.iterdir())
 
 
+@pytest.mark.skipif(os.name != "nt", reason="proteção Win32")
+def test_create_backup_never_publishes_into_swapped_reserved_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mr_farmboy_manager.backups as backups_module
+    from mr_farmboy_manager import save_details as secure_reader
+
+    game_data, slot = _create_source_slot(tmp_path)
+    backup_root = tmp_path / "backups"
+    backup_id = f"save_3-20260808T000000Z-{SUFFIX_A}"
+    destination = backup_root / backup_id
+    preserved_reserved = backup_root / "preserved-reserved"
+    real_open = secure_reader._open_win32_handle
+    real_rename = backups_module.os.rename
+    swapped = False
+
+    def swap_then_open(path, access, flags):
+        nonlocal swapped
+        candidate = Path(path)
+        if not swapped and candidate == destination:
+            swapped = True
+            real_rename(destination, preserved_reserved)
+            destination.mkdir()
+            (destination / "foreign.txt").write_bytes(b"must-stay")
+        return real_open(path, access, flags)
+
+    monkeypatch.setattr(secure_reader, "_open_win32_handle", swap_then_open)
+    result = create_backup(
+        slot,
+        game_data,
+        backup_root,
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
+        suffix=SUFFIX_A,
+    )
+
+    assert swapped
+    assert not result.is_success
+    assert result.error_code is BackupErrorCode.CLEANUP_FAILED
+    assert (destination / "foreign.txt").read_bytes() == b"must-stay"
+    assert list(preserved_reserved.iterdir()) == []
+    assert not (destination / BACKUP_PAYLOAD_DIRECTORY).exists()
+    assert not (destination / BACKUP_MANIFEST_FILENAME).exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="proteção Win32")
+def test_create_backup_keeps_root_locked_while_opening_reserved_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mr_farmboy_manager.backups as backups_module
+    from mr_farmboy_manager import save_details as secure_reader
+
+    game_data, slot = _create_source_slot(tmp_path)
+    backup_root = tmp_path / "backups"
+    backup_id = f"save_3-20260808T000000Z-{SUFFIX_A}"
+    destination = backup_root / backup_id
+    displaced_root = tmp_path / "displaced-backups"
+    real_open = secure_reader._open_win32_handle
+    real_rename = backups_module.os.rename
+    rename_blocked = False
+
+    def try_root_swap_then_open(path, access, flags):
+        nonlocal rename_blocked
+        candidate = Path(path)
+        if candidate == destination and not rename_blocked:
+            try:
+                real_rename(backup_root, displaced_root)
+            except PermissionError:
+                rename_blocked = True
+            else:
+                real_rename(displaced_root, backup_root)
+        return real_open(path, access, flags)
+
+    monkeypatch.setattr(
+        secure_reader,
+        "_open_win32_handle",
+        try_root_swap_then_open,
+    )
+    result = create_backup(
+        slot,
+        game_data,
+        backup_root,
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
+        suffix=SUFFIX_A,
+    )
+
+    assert rename_blocked
+    assert result.is_success
+    assert result.backup is not None
+    assert result.backup.destination == destination
+
+
 def _symlink_directory_or_skip(link: Path, target: Path) -> None:
     try:
         link.symlink_to(target, target_is_directory=True)

@@ -2288,8 +2288,15 @@ def _publish_staged_backup(
     backup_root_chain: tuple[_PathIdentity, ...],
 ) -> None:
     reserved_state: os.stat_result | None = None
+    root = destination.parent
+    root_state: os.stat_result | None = None
+    staging_state: os.stat_result | None = None
+    staging_entries: tuple[_SourceEntry, ...] = ()
     try:
         _assert_directory_chain(backup_root_chain)
+        root_state = os.lstat(root)
+        staging_state = os.lstat(staging)
+        staging_entries = _inventory_source_slot(staging)
         destination.mkdir(exist_ok=False)
         reserved_state = os.lstat(destination)
     except FileExistsError as error:
@@ -2305,16 +2312,29 @@ def _publish_staged_backup(
 
     try:
         _assert_directory_chain(backup_root_chain)
-        os.rename(
-            staging / BACKUP_PAYLOAD_DIRECTORY,
-            destination / BACKUP_PAYLOAD_DIRECTORY,
+        if (
+            root_state is None
+            or staging_state is None
+            or reserved_state is None
+            or os.name != "nt"
+        ):
+            raise OSError
+        _publish_staged_backup_windows(
+            staging,
+            destination,
+            root,
+            root_state,
+            staging_state,
+            reserved_state,
+            staging_entries,
         )
-        _assert_directory_chain(backup_root_chain)
-        os.rename(
-            staging / BACKUP_MANIFEST_FILENAME,
-            destination / BACKUP_MANIFEST_FILENAME,
+        _remove_restore_directory(
+            staging,
+            root,
+            backup_root_chain,
+            staging_state,
+            expected_entries=(),
         )
-        staging.rmdir()
     except OSError as error:
         try:
             current_state = os.lstat(destination)
@@ -2333,6 +2353,217 @@ def _publish_staged_backup(
             BackupErrorCode.PUBLISH_FAILED,
             "Não foi possível concluir o backup.",
         ) from error
+
+
+def _publish_staged_backup_windows(
+    staging: Path,
+    destination: Path,
+    root: Path,
+    expected_root_state: os.stat_result,
+    expected_staging_state: os.stat_result,
+    expected_destination_state: os.stat_result,
+    expected_entries: tuple[_SourceEntry, ...],
+) -> None:
+    """Publica payload e manifesto sob handles Win32 mantidos até a validação."""
+    import ctypes
+    import ntpath
+    from ctypes import wintypes
+
+    from . import save_details as secure_reader
+
+    class _FileRenameInfo(ctypes.Structure):
+        _fields_ = [
+            ("replace_or_flags", wintypes.DWORD),
+            ("root_directory", wintypes.HANDLE),
+            ("file_name_length", wintypes.DWORD),
+            ("file_name", wintypes.WCHAR * 1),
+        ]
+
+    class _IoStatusBlock(ctypes.Structure):
+        _fields_ = [
+            ("status_or_pointer", ctypes.c_void_p),
+            ("information", ctypes.c_size_t),
+        ]
+
+    ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+    nt_set_information = ntdll.NtSetInformationFile
+    nt_set_information.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_IoStatusBlock),
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.c_int,
+    ]
+    nt_set_information.restype = wintypes.LONG
+    delete_access = 0x00010000
+    file_rename_information_class = 10
+    root_handle: int | None = None
+    staging_handle: int | None = None
+    destination_handle: int | None = None
+    source_handle: int | None = None
+
+    def open_directory(
+        path: Path,
+        expected_state: os.stat_result,
+        expected_parent: str | None,
+    ) -> tuple[int, str]:
+        handle = secure_reader._open_win32_handle(
+            path,
+            secure_reader._FILE_READ_ATTRIBUTES,
+            secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+            | secure_reader._FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        information = secure_reader._get_win32_file_information(handle)
+        final_path = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(handle)
+        )
+        expected_path = ntpath.normpath(str(path)).rstrip("\\/").casefold()
+        if (
+            information.file_index != expected_state.st_ino
+            or final_path != expected_path
+            or (
+                expected_parent is not None
+                and ntpath.dirname(final_path) != expected_parent
+            )
+            or information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or not information.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+        ):
+            secure_reader._close_win32_handle(handle)
+            raise OSError
+        return handle, final_path
+
+    def move_entry(
+        source: Path,
+        expected_entry: _SourceEntry,
+        *,
+        is_directory: bool,
+    ) -> None:
+        nonlocal source_handle
+        flags = secure_reader._FILE_FLAG_OPEN_REPARSE_POINT
+        if is_directory:
+            flags |= secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+        source_handle = secure_reader._open_win32_handle(
+            source,
+            delete_access | secure_reader._FILE_READ_ATTRIBUTES,
+            flags,
+        )
+        information = secure_reader._get_win32_file_information(source_handle)
+        final_path = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(source_handle)
+        )
+        expected_path = ntpath.normpath(str(source)).rstrip("\\/").casefold()
+        has_directory_attribute = bool(
+            information.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+        )
+        if (
+            information.file_index != expected_entry.inode
+            or final_path != expected_path
+            or ntpath.dirname(final_path) != staging_final_path
+            or information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or has_directory_attribute is not is_directory
+            or expected_entry.is_directory is not is_directory
+            or expected_entry.relative_path != source.name
+            or (not is_directory and information.size != expected_entry.size_bytes)
+        ):
+            raise OSError
+
+        encoded_name = source.name.encode("utf-16-le")
+        file_name_offset = _FileRenameInfo.file_name.offset
+        buffer_size = max(
+            ctypes.sizeof(_FileRenameInfo),
+            file_name_offset + len(encoded_name) + ctypes.sizeof(wintypes.WCHAR),
+        )
+        buffer = ctypes.create_string_buffer(buffer_size)
+        rename_information = ctypes.cast(
+            buffer,
+            ctypes.POINTER(_FileRenameInfo),
+        ).contents
+        rename_information.replace_or_flags = 0
+        rename_information.root_directory = destination_handle
+        rename_information.file_name_length = len(encoded_name)
+        ctypes.memmove(
+            ctypes.addressof(buffer) + file_name_offset,
+            encoded_name,
+            len(encoded_name),
+        )
+        io_status = _IoStatusBlock()
+        status = nt_set_information(
+            source_handle,
+            ctypes.byref(io_status),
+            ctypes.byref(buffer),
+            buffer_size,
+            file_rename_information_class,
+        )
+        if status < 0:
+            raise OSError
+        secure_reader._close_win32_handle(source_handle)
+        source_handle = None
+
+    try:
+        if staging.parent != root or destination.parent != root:
+            raise OSError
+        root_handle, root_final_path = open_directory(
+            root,
+            expected_root_state,
+            None,
+        )
+        staging_handle, staging_final_path = open_directory(
+            staging,
+            expected_staging_state,
+            root_final_path,
+        )
+        destination_handle, _destination_final_path = open_directory(
+            destination,
+            expected_destination_state,
+            root_final_path,
+        )
+        with os.scandir(destination) as iterator:
+            if next(iterator, None) is not None:
+                raise OSError
+
+        expected_by_path = {entry.relative_path: entry for entry in expected_entries}
+        payload_expected = expected_by_path.get(BACKUP_PAYLOAD_DIRECTORY)
+        manifest_expected = expected_by_path.get(BACKUP_MANIFEST_FILENAME)
+        if (
+            payload_expected is None
+            or not payload_expected.is_directory
+            or manifest_expected is None
+            or manifest_expected.is_directory
+        ):
+            raise OSError
+        move_entry(
+            staging / BACKUP_PAYLOAD_DIRECTORY,
+            payload_expected,
+            is_directory=True,
+        )
+        move_entry(
+            staging / BACKUP_MANIFEST_FILENAME,
+            manifest_expected,
+            is_directory=False,
+        )
+        if (
+            _inventory_source_slot(staging)
+            or _inventory_source_slot(destination) != expected_entries
+        ):
+            raise OSError
+    finally:
+        active_error = sys.exception()
+        close_error: OSError | None = None
+        for handle in (
+            source_handle,
+            destination_handle,
+            staging_handle,
+            root_handle,
+        ):
+            if handle is None:
+                continue
+            try:
+                secure_reader._close_win32_handle(handle)
+            except OSError as error:
+                if close_error is None:
+                    close_error = error
+        if close_error is not None and active_error is None:
+            raise close_error
 
 
 def _same_stat_identity(
