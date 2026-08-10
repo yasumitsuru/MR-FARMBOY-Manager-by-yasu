@@ -571,6 +571,7 @@ def restore_backup(
     rollback: Path | None = None
     active_root_chain: tuple[_PathIdentity, ...] = ()
     staging_identity: os.stat_result | None = None
+    staging_entries: tuple[_SourceEntry, ...] = ()
     preventive_record: BackupRecord | None = None
     preserve_partial_state = False
 
@@ -716,6 +717,7 @@ def restore_backup(
             staging,
             current_manifest,
         )
+        staging_entries = _inventory_source_slot(staging)
 
         _assert_directory_chain(
             active_root_chain,
@@ -758,6 +760,7 @@ def restore_backup(
                 active_root,
                 active_root_chain,
                 active_slot_state,
+                expected_entries=active_entries,
             )
         except (OSError, _BackupOperationFailure):
             return BackupRestoreResult(
@@ -811,6 +814,7 @@ def restore_backup(
                 active_root,
                 active_root_chain,
                 staging_identity,
+                expected_entries=staging_entries,
             )
         except (OSError, _BackupOperationFailure):
             return BackupRestoreResult(
@@ -1182,7 +1186,7 @@ def _remove_restore_directory(
     active_root_chain: tuple[_PathIdentity, ...],
     expected_state: os.stat_result,
     *,
-    expected_entries: tuple[_SourceEntry, ...] | None = None,
+    expected_entries: tuple[_SourceEntry, ...],
 ) -> None:
     _assert_directory_chain(active_root_chain)
     if directory.parent != active_root:
@@ -1201,16 +1205,10 @@ def _remove_restore_directory(
             expected_entries=expected_entries,
         )
         return
-    if expected_entries is not None:
-        # POSIX does not offer a portable unlink-by-handle primitive.  A
-        # quarantined backup therefore stays pending instead of risking that a
-        # pathname swap makes cleanup delete an entry outside its inventory.
-        raise OSError
-    if not shutil.rmtree.avoids_symlink_attacks:
-        raise OSError
-    if not _same_stat_identity(os.lstat(directory), expected_state):
-        raise OSError
-    shutil.rmtree(directory)
+    # POSIX does not offer a portable unlink-by-handle primitive.  A
+    # quarantined backup therefore stays pending instead of risking that a
+    # pathname swap makes cleanup delete an entry outside its inventory.
+    raise OSError
 
 
 def _quarantine_backup_directory(
@@ -1372,7 +1370,7 @@ def _remove_restore_directory_windows(
     directory: Path,
     expected_state: os.stat_result,
     *,
-    expected_entries: tuple[_SourceEntry, ...] | None = None,
+    expected_entries: tuple[_SourceEntry, ...],
 ) -> None:
     """Remove a árvore exata por handles Win32 sem seguir substituições."""
     import ctypes
@@ -1396,14 +1394,13 @@ def _remove_restore_directory_windows(
     file_disposition_info_class = 4
 
     expected_children: dict[str, list[_SourceEntry]] = {}
-    if expected_entries is not None:
-        for entry in expected_entries:
-            parent = PurePosixPath(entry.relative_path).parent.as_posix()
-            expected_children.setdefault("" if parent == "." else parent, []).append(
-                entry
-            )
-        for children in expected_children.values():
-            children.sort(key=lambda entry: entry.relative_path)
+    for entry in expected_entries:
+        parent = PurePosixPath(entry.relative_path).parent.as_posix()
+        expected_children.setdefault("" if parent == "." else parent, []).append(
+            entry
+        )
+    for children in expected_children.values():
+        children.sort(key=lambda entry: entry.relative_path)
 
     def remove_node(
         path: Path,
@@ -1448,45 +1445,34 @@ def _remove_restore_directory_windows(
             if is_directory:
                 with os.scandir(path) as iterator:
                     children = sorted(iterator, key=lambda entry: entry.name)
-                if expected_entries is None:
-                    children_to_remove: list[
-                        tuple[Path, os.stat_result | _SourceEntry, str]
-                    ] = []
-                    for child in children:
-                        child_path = Path(child.path)
-                        child_state = os.lstat(child_path)
-                        if _has_reparse_attribute(child_state):
-                            raise OSError
-                        children_to_remove.append((child_path, child_state, ""))
-                else:
-                    expected_for_directory = expected_children.get(relative_path, [])
-                    expected_names = {
-                        PurePosixPath(entry.relative_path).name
-                        for entry in expected_for_directory
-                    }
-                    if {child.name for child in children} != expected_names:
-                        raise OSError
-                    children_to_remove = []
-                    for child_expected in expected_for_directory:
-                        child_name = PurePosixPath(child_expected.relative_path).name
-                        child_path = path / child_name
-                        child_state = os.lstat(child_path)
-                        if (
-                            _has_reparse_attribute(child_state)
-                            or _source_entry(
-                                child_expected.relative_path,
-                                child_state,
-                            )
-                            != child_expected
-                        ):
-                            raise OSError
-                        children_to_remove.append(
-                            (
-                                child_path,
-                                child_expected,
-                                child_expected.relative_path,
-                            )
+                expected_for_directory = expected_children.get(relative_path, [])
+                expected_names = {
+                    PurePosixPath(entry.relative_path).name
+                    for entry in expected_for_directory
+                }
+                if {child.name for child in children} != expected_names:
+                    raise OSError
+                children_to_remove = []
+                for child_expected in expected_for_directory:
+                    child_name = PurePosixPath(child_expected.relative_path).name
+                    child_path = path / child_name
+                    child_state = os.lstat(child_path)
+                    if (
+                        _has_reparse_attribute(child_state)
+                        or _source_entry(
+                            child_expected.relative_path,
+                            child_state,
                         )
+                        != child_expected
+                    ):
+                        raise OSError
+                    children_to_remove.append(
+                        (
+                            child_path,
+                            child_expected,
+                            child_expected.relative_path,
+                        )
+                    )
 
                 for child_path, child_expected, child_relative_path in children_to_remove:
                     remove_node(child_path, child_expected, child_relative_path)

@@ -240,6 +240,104 @@ def test_publish_failure_rolls_original_slot_back(
     assert not any(path.name.startswith(".restore-") for path in game_data.iterdir())
 
 
+def test_restore_keeps_rollback_tree_when_cleanup_inventory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An extra file injected before cleanup must keep the old slot intact."""
+    import mr_farmboy_manager.backups as backups_module
+
+    game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
+    _replace_active_contents(slot)
+    real_remove = backups_module._remove_restore_directory
+    injected: Path | None = None
+
+    def inject_extra_before_cleanup(path, *args, **kwargs):
+        nonlocal injected
+        directory = Path(path)
+        if directory.name.startswith(".restore-old-"):
+            injected = directory / "foreign.tres"
+            injected.write_bytes(b"must-stay")
+        return real_remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        backups_module,
+        "_remove_restore_directory",
+        inject_extra_before_cleanup,
+    )
+    result = restore_backup(
+        slot,
+        game_data,
+        backup_root,
+        selected.backup_id,
+        confirmed=True,
+    )
+
+    assert result.is_success
+    assert result.cleanup_pending
+    assert result.error_code is BackupErrorCode.RESTORE_CLEANUP_PENDING
+    assert "limpeza temporária" in result.public_message.lower()
+    assert str(tmp_path) not in result.public_message
+    assert injected is not None and injected.read_bytes() == b"must-stay"
+    assert (injected.parent / "player_data.tres").read_bytes() == b"current-active"
+    assert (injected.parent / "island" / "main.tres").read_bytes() == b"current-island"
+    assert (slot.path / "player_data.tres").read_bytes() == b"selected-backup"
+
+
+def test_restore_keeps_staging_tree_when_failed_publish_cleanup_inventory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An extra file injected into staging must make failed cleanup stay pending."""
+    import mr_farmboy_manager.backups as backups_module
+
+    game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
+    _replace_active_contents(slot)
+    real_rename = backups_module.os.rename
+    real_remove = backups_module._remove_restore_directory
+    rename_calls = 0
+    injected: Path | None = None
+
+    def fail_publish(source, destination, *args, **kwargs):
+        nonlocal rename_calls
+        if Path(source).parent == game_data:
+            rename_calls += 1
+            if rename_calls == 2:
+                raise PermissionError("locked-private-path")
+        return real_rename(source, destination, *args, **kwargs)
+
+    def inject_extra_before_cleanup(path, *args, **kwargs):
+        nonlocal injected
+        directory = Path(path)
+        if directory.name.startswith(".restore-staging-"):
+            injected = directory / "foreign.tres"
+            injected.write_bytes(b"must-stay")
+        return real_remove(path, *args, **kwargs)
+
+    monkeypatch.setattr(backups_module.os, "rename", fail_publish)
+    monkeypatch.setattr(
+        backups_module,
+        "_remove_restore_directory",
+        inject_extra_before_cleanup,
+    )
+    result = restore_backup(
+        slot,
+        game_data,
+        backup_root,
+        selected.backup_id,
+        confirmed=True,
+    )
+
+    assert not result.is_success
+    assert result.cleanup_pending
+    assert result.error_code is BackupErrorCode.RESTORE_CLEANUP_PENDING
+    assert "limpeza temporária" in result.public_message.lower()
+    assert "locked-private-path" not in result.public_message
+    assert str(tmp_path) not in result.public_message
+    assert injected is not None and injected.read_bytes() == b"must-stay"
+    assert (injected.parent / "player_data.tres").read_bytes() == b"selected-backup"
+    assert (injected.parent / "island" / "main.tres").read_bytes() == b"island-backup"
+    assert (slot.path / "player_data.tres").read_bytes() == b"current-active"
+
+
 def test_failed_rollback_reports_partial_state_and_preserves_both_directories(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
