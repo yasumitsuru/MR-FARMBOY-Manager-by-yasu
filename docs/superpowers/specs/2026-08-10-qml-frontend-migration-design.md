@@ -462,8 +462,9 @@ Regras:
    reconhecível, seu pai é avaliado como raiz.
 3. A normalização para o pai só ocorre quando o pai passa a descoberta estrutural
    de raiz e contém o próprio slot informado.
-4. Diretório apenas existente, mas sem estrutura reconhecível, continua inválido
-   para carga de saves; não sobe diretórios arbitrariamente.
+4. Um diretório existente que não contém slots continua sendo uma raiz válida em
+   estado vazio; a rotina não sobe diretórios arbitrariamente quando o basename
+   não corresponde a `save_<n>` ou quando o pai não descobre o próprio slot.
 5. O resultado diferencia `valid`, `normalized` e `invalid` e inclui mensagem
    segura para a UI.
 6. Quando normalizado, settings persiste a raiz efetiva, nunca o slot individual.
