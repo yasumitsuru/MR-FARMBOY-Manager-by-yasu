@@ -64,7 +64,7 @@ class BackupsViewModel(QObject):
         self._refresh_keeps_status = False
         self._mutation_request: int | None = None
         self._mutation_context: tuple[str, str] | None = None
-        self._pending_confirmation: tuple[str, str] | None = None
+        self._pending_confirmation: tuple[str, str, SaveSlotSummary | None] | None = None
         runner.succeeded.connect(self._operation_succeeded)
         runner.failed.connect(self._operation_failed)
 
@@ -124,13 +124,15 @@ class BackupsViewModel(QObject):
     @Slot()
     def requestRestore(self) -> None:
         record = self._selected_record
-        if self._is_locked or record is None or self._summary_for(record) is None:
+        summary = self._summary_for(record) if record is not None else None
+        if self._is_locked or record is None or summary is None:
             return
         self._request_confirmation(
             "restore",
             record,
             "Confirmar restauração",
             "Esta ação substituirá o save ativo após criar um backup preventivo.",
+            summary,
         )
 
     @Slot()
@@ -143,20 +145,25 @@ class BackupsViewModel(QObject):
             record,
             "Confirmar exclusão",
             "Esta ação excluirá permanentemente o backup selecionado.",
+            None,
         )
 
     @Slot(str, str)
     def confirmAction(self, action: str, backup_id: str) -> None:
         pending = self._pending_confirmation
-        if pending != (action, backup_id):
+        if pending is None or pending[:2] != (action, backup_id):
             return
         record = self._backup_for(backup_id)
         if record is None or self._selected_backup_id != backup_id:
             self._clear_confirmation()
             return
         if action == "restore":
-            summary = self._summary_for(record)
-            if summary is None:
+            confirmed_summary = pending[2]
+            if (
+                confirmed_summary is None
+                or self._selected_summary is not confirmed_summary
+                or self._summary_for(record) is not confirmed_summary
+            ):
                 self._clear_confirmation()
                 return
             self._clear_confirmation()
@@ -164,8 +171,8 @@ class BackupsViewModel(QObject):
                 "restore",
                 backup_id,
                 lambda: self._restorer(
-                    summary.slot,
-                    summary.slot.path.parent,
+                    confirmed_summary.slot,
+                    confirmed_summary.slot.path.parent,
                     self._backup_root,
                     backup_id,
                     confirmed=True,
@@ -192,10 +199,15 @@ class BackupsViewModel(QObject):
         self._notify_if_changed(before)
 
     def _request_confirmation(
-        self, action: str, record: BackupRecord, title: str, message: str
+        self,
+        action: str,
+        record: BackupRecord,
+        title: str,
+        message: str,
+        summary: SaveSlotSummary | None,
     ) -> None:
         before = self._public_values()
-        self._pending_confirmation = action, record.backup_id
+        self._pending_confirmation = action, record.backup_id, summary
         self._notify_if_changed(before)
         self.confirmationRequested.emit(action, record.backup_id, title, message)
 
