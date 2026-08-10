@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import logging
 from datetime import timezone
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from mr_farmboy_manager.manual_paths import (
     load_save_slot_summaries,
     validate_directory_path,
 )
+from mr_farmboy_manager.diagnostics import configure_logging
 from mr_farmboy_manager.save_slots import (
     SaveSlot,
     SaveSlotSummary,
@@ -53,6 +55,9 @@ from mr_farmboy_manager.save_slots import (
 )
 from mr_farmboy_manager.save_details import SaveSlotDetails, inspect_save_slot
 from mr_farmboy_manager.settings import AppSettings, QtSettingsStore, SettingsStore
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def create_application() -> QApplication:
@@ -285,6 +290,8 @@ def create_main_window(
                 save_path_input.setText(str(selected))
                 update_save_path_status(save_path_input.text())
                 on_load_saves_clicked()
+            else:
+                LOGGER.info("configuration.save_directory.cancelled")
 
             return
 
@@ -298,6 +305,8 @@ def create_main_window(
             save_path_input.setText(selected_path)
             update_save_path_status(save_path_input.text())
             on_load_saves_clicked()
+        else:
+            LOGGER.info("configuration.save_directory.cancelled")
 
     browse_save_path_button.clicked.connect(choose_save_directory)
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
@@ -389,6 +398,11 @@ def create_main_window(
     def on_game_install_path_editing_finished() -> None:
         update_game_install_path_status(game_install_path_input.text())
         persist_game_install_directory_if_valid(game_install_path_input.text())
+        validation = validate_directory_path(game_install_path_input.text())
+        LOGGER.info(
+            "configuration.game_install_directory.changed code=%s",
+            validation.code.name.lower(),
+        )
 
     save_path_input.editingFinished.connect(on_save_path_editing_finished)
 
@@ -405,6 +419,13 @@ def create_main_window(
                 game_install_path_input.setText(str(selected))
                 update_game_install_path_status(game_install_path_input.text())
                 persist_game_install_directory_if_valid(game_install_path_input.text())
+                validation = validate_directory_path(game_install_path_input.text())
+                LOGGER.info(
+                    "configuration.game_install_directory.changed code=%s",
+                    validation.code.name.lower(),
+                )
+            else:
+                LOGGER.info("configuration.game_install_directory.cancelled")
 
             return
 
@@ -418,6 +439,13 @@ def create_main_window(
             game_install_path_input.setText(selected_path)
             update_game_install_path_status(game_install_path_input.text())
             persist_game_install_directory_if_valid(game_install_path_input.text())
+            validation = validate_directory_path(game_install_path_input.text())
+            LOGGER.info(
+                "configuration.game_install_directory.changed code=%s",
+                validation.code.name.lower(),
+            )
+        else:
+            LOGGER.info("configuration.game_install_directory.cancelled")
 
     browse_game_install_button.clicked.connect(choose_game_install_directory)
     game_install_path_input.editingFinished.connect(on_game_install_path_editing_finished)
@@ -448,8 +476,15 @@ def create_main_window(
 
         requested_path = save_path_input.text()
         result = load_manual_summaries(requested_path)
+        applied = apply_manual_load_result(result)
+        LOGGER.info(
+            "configuration.save_directory.changed code=%s loaded=%s slots=%d",
+            result.validation.code.name.lower(),
+            applied,
+            len(result.summaries),
+        )
 
-        if apply_manual_load_result(result):
+        if applied:
             active_manual_save_path = requested_path
             persist_save_directory_if_valid(requested_path)
 
@@ -648,6 +683,7 @@ def create_main_window(
             result = effective_backup_loader(resolved_backup_root)
             apply_backup_discovery_result(result)
         except Exception:
+            LOGGER.error("refresh.backups.failed")
             apply_backup_discovery_result(
                 BackupDiscoveryResult(
                     backups=(),
@@ -655,6 +691,13 @@ def create_main_window(
                     error_code=BackupErrorCode.DISCOVERY_FAILED,
                     public_message="Não foi possível listar os backups.",
                 )
+            )
+        else:
+            LOGGER.info(
+                "refresh.backups.completed success=%s backups=%d invalid=%d",
+                result.is_success,
+                len(result.backups),
+                len(result.invalid_entries),
             )
 
     def reset_backup_action() -> None:
@@ -717,10 +760,12 @@ def create_main_window(
             )
             if on_slot_selected is not None:
                 on_slot_selected(summary)
+            LOGGER.info("parsing.started slot=%d", summary.slot.number)
             try:
                 details = details_loader(summary)
                 rendered_details = format_save_slot_details(details)
             except Exception:
+                LOGGER.error("parsing.failed slot=%d", summary.slot.number)
                 save_slot_details_status_label.setText(
                     "Não foi possível carregar os detalhes. Tente novamente com o jogo fechado."
                 )
@@ -729,6 +774,12 @@ def create_main_window(
                 )
                 return
 
+            LOGGER.info(
+                "parsing.completed slot=%d inspected_files=%d failed_files=%d",
+                summary.slot.number,
+                details.inspected_file_count,
+                len(details.failed_files),
+            )
             save_slot_details_status_label.setText("Detalhes carregados.")
             save_slot_details_view.setPlainText(rendered_details)
             return
@@ -797,12 +848,18 @@ def create_main_window(
             backup_management_status_label.setText(
                 f"O save ativo do Slot {record.slot_number} não está disponível."
             )
+            LOGGER.warning(
+                "backup.restore.rejected slot=%d reason=active_save_missing",
+                record.slot_number,
+            )
             return
         if not confirm_restore(record):
             backup_management_status_label.setText("Restauração cancelada.")
+            LOGGER.info("backup.restore.cancelled slot=%d", record.slot_number)
             return
 
         restore_backup_button.setEnabled(False)
+        LOGGER.info("backup.restore.started slot=%d", record.slot_number)
         backup_management_status_label.setText(
             f"Restaurando backup do Slot {record.slot_number}..."
         )
@@ -815,6 +872,7 @@ def create_main_window(
                 confirmed=True,
             )
         except Exception:
+            LOGGER.error("backup.restore.failed slot=%d", record.slot_number)
             backup_management_status_label.setText(
                 "Não foi possível restaurar o backup. Feche o jogo e tente novamente."
             )
@@ -822,6 +880,18 @@ def create_main_window(
             if result.is_success:
                 refresh_backups()
                 refresh_save_slots()
+                LOGGER.info("backup.restore.completed slot=%d", record.slot_number)
+            else:
+                error_code = (
+                    result.error_code.value
+                    if result.error_code is not None
+                    else "unknown"
+                )
+                LOGGER.warning(
+                    "backup.restore.failed slot=%d code=%s",
+                    record.slot_number,
+                    error_code,
+                )
             backup_management_status_label.setText(result.public_message)
         finally:
             if selected_backup is not None:
@@ -836,9 +906,11 @@ def create_main_window(
             return
         if not confirm_delete(record):
             backup_management_status_label.setText("Exclusão cancelada.")
+            LOGGER.info("backup.delete.cancelled slot=%d", record.slot_number)
             return
 
         delete_backup_button.setEnabled(False)
+        LOGGER.info("backup.delete.started slot=%d", record.slot_number)
         backup_management_status_label.setText(
             f"Excluindo backup do Slot {record.slot_number}..."
         )
@@ -849,12 +921,25 @@ def create_main_window(
                 confirmed=True,
             )
         except Exception:
+            LOGGER.error("backup.delete.failed slot=%d", record.slot_number)
             backup_management_status_label.setText(
                 "Não foi possível excluir o backup."
             )
         else:
             if result.is_success:
                 refresh_backups()
+                LOGGER.info("backup.delete.completed slot=%d", record.slot_number)
+            else:
+                error_code = (
+                    result.error_code.value
+                    if result.error_code is not None
+                    else "unknown"
+                )
+                LOGGER.warning(
+                    "backup.delete.failed slot=%d code=%s",
+                    record.slot_number,
+                    error_code,
+                )
             backup_management_status_label.setText(result.public_message)
         finally:
             if selected_backup is not None:
@@ -870,6 +955,7 @@ def create_main_window(
             return
 
         create_backup_button.setEnabled(False)
+        LOGGER.info("backup.create.started slot=%d", summary.slot.number)
         backup_status_label.setText(
             f"Criando backup do slot {summary.slot.number}..."
         )
@@ -880,6 +966,7 @@ def create_main_window(
                 resolved_backup_root,
             )
         except Exception:
+            LOGGER.error("backup.create.failed slot=%d", summary.slot.number)
             backup_status_label.setText(
                 "Não foi possível criar o backup. Feche o jogo e tente novamente."
             )
@@ -893,7 +980,18 @@ def create_main_window(
                     f"{format_file_size(record.total_size_bytes)}."
                 )
                 refresh_backups()
+                LOGGER.info("backup.create.completed slot=%d", summary.slot.number)
             else:
+                error_code = (
+                    result.error_code.value
+                    if result.error_code is not None
+                    else "unknown"
+                )
+                LOGGER.warning(
+                    "backup.create.failed slot=%d code=%s",
+                    summary.slot.number,
+                    error_code,
+                )
                 backup_status_label.setText(result.public_message)
         finally:
             create_backup_button.setEnabled(selected_summary is not None)
@@ -905,6 +1003,7 @@ def create_main_window(
     delete_backup_button.clicked.connect(on_delete_backup_clicked)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
+    LOGGER.info("refresh.saves.completed source=initial slots=%d", len(summaries))
     refresh_backups()
     update_save_path_status(save_path_input.text())
     update_game_install_path_status(game_install_path_input.text())
@@ -925,12 +1024,26 @@ def create_main_window(
             active_manual_save_path = restored_save_path
 
     def refresh_save_slots() -> None:
-        if active_manual_save_path is None:
-            replace_save_slot_summaries(save_slots_loader())
-            return
+        try:
+            if active_manual_save_path is None:
+                refreshed_summaries = save_slots_loader()
+                replace_save_slot_summaries(refreshed_summaries)
+                LOGGER.info(
+                    "refresh.saves.completed source=default slots=%d",
+                    len(refreshed_summaries),
+                )
+                return
 
-        result = load_manual_summaries(active_manual_save_path)
-        apply_manual_load_result(result)
+            result = load_manual_summaries(active_manual_save_path)
+            applied = apply_manual_load_result(result)
+            LOGGER.info(
+                "refresh.saves.completed source=manual success=%s slots=%d",
+                applied,
+                len(result.summaries),
+            )
+        except Exception:
+            LOGGER.error("refresh.saves.failed")
+            raise
 
     auto_refresh_timer = QTimer(window)
     auto_refresh_timer.setObjectName("save_auto_refresh_timer")
@@ -997,7 +1110,12 @@ def run() -> int:
     Returns:
         Código de saída da aplicação (0 para sucesso).
     """
+    configure_logging()
+    LOGGER.info("application.startup")
     app = create_application()
     window = create_main_window(app, settings_store=QtSettingsStore())
     window.show()
-    return app.exec()
+    LOGGER.info("application.ready")
+    exit_code = app.exec()
+    LOGGER.info("application.shutdown exit_code=%d", exit_code)
+    return exit_code

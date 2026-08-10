@@ -1,5 +1,6 @@
 """Jornada MVP integrada usando somente filesystem temporário."""
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,7 +29,12 @@ def _widget(window, widget_type, object_name: str):
     return widget
 
 
-def test_complete_local_mvp_journey(qt_app: QApplication, tmp_path: Path) -> None:
+def test_complete_local_mvp_journey(
+    qt_app: QApplication,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="mr_farmboy_manager.application")
     game_data = tmp_path / "game_data"
     slot = game_data / "save_1"
     slot.mkdir(parents=True)
@@ -157,6 +163,24 @@ def test_complete_local_mvp_journey(qt_app: QApplication, tmp_path: Path) -> Non
         assert not (backup_root / original_backup_id).exists()
         assert backup_list.count() == 1
         assert original_backup_id not in backup_list.item(0).text()
+
+        messages = [record.getMessage() for record in caplog.records]
+        for event in (
+            "configuration.save_directory.changed",
+            "refresh.backups.completed",
+            "parsing.started",
+            "parsing.completed",
+            "backup.create.started",
+            "backup.create.completed",
+            "backup.restore.started",
+            "backup.restore.completed",
+            "refresh.saves.completed",
+            "backup.delete.started",
+            "backup.delete.completed",
+        ):
+            assert any(message.startswith(event) for message in messages)
+        assert str(tmp_path) not in caplog.text
+        assert "current_tutorial" not in caplog.text
     finally:
         window.close()
         QApplication.processEvents()
