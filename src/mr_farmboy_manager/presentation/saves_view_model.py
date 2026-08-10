@@ -132,6 +132,7 @@ class SavesViewModel(QObject):
         self._error_message = ""
         self._refresh_request: int | None = None
         self._refresh_generation = 0
+        self._refresh_context: tuple[int, str] | None = None
         self._detail_request: int | None = None
         self._detail_generation = 0
         self._detail_context: tuple[int, str] | None = None
@@ -143,49 +144,48 @@ class SavesViewModel(QObject):
         save_root = str(value).strip()
         if save_root == self._save_root:
             return
-        refresh_capability_changed = bool(save_root) != bool(self._save_root)
-        selection_will_notify = (
-            self._selected_summary is not None or self._details_state != "idle"
-        )
-        values_will_notify = (
-            self._state != "idle"
-            or self._status_message != ""
-            or self._error_message != ""
-        )
+        before = self._public_values()
         self._save_root = save_root
+        self._refresh_generation += 1
+        self._refresh_request = None
+        self._refresh_context = None
         self._clear_selection()
         self._set_values(state="idle", status_message="", error_message="")
-        if refresh_capability_changed and not (
-            selection_will_notify or values_will_notify
-        ):
-            self.changed.emit()
+        self._notify_if_changed(before)
 
     @Slot()
     def refresh(self) -> None:
         if not self._save_root or self._refresh_request is not None:
             return
+        before = self._public_values()
         self._refresh_generation += 1
         generation = self._refresh_generation
+        save_root = self._save_root
         self._set_values(state="loading", status_message="", error_message="")
-        self._refresh_request = self._runner.submit(
-            f"saves.refresh:{generation}", lambda: self._loader(self._save_root)
+        request_id = self._runner.submit(
+            f"saves.refresh:{generation}", lambda: self._loader(save_root)
         )
-        self.changed.emit()
+        self._refresh_request = request_id
+        self._refresh_context = generation, save_root
+        self._notify_if_changed(before)
 
     @Slot(str)
     def selectSlot(self, slot_id: str) -> None:
         summary = self._summary_for(slot_id)
         if summary is None or summary == self._selected_summary:
             return
+        before = self._public_values()
         self._selected_summary = summary
         self._slots_model.set_selected(summary.slot.name)
         self.selectedSummaryChanged.emit(summary)
         self._request_details(summary)
-        self.changed.emit()
+        self._notify_if_changed(before)
 
     @Slot()
     def clearSelection(self) -> None:
+        before = self._public_values()
         self._clear_selection()
+        self._notify_if_changed(before)
 
     def _clear_selection(self) -> None:
         if self._selected_summary is None and self._details_state == "idle":
@@ -198,7 +198,6 @@ class SavesViewModel(QObject):
         self._details.clear()
         self._set_values(details_state="idle")
         self.selectedSummaryChanged.emit(None)
-        self.changed.emit()
 
     def _request_details(self, summary: SaveSlotSummary) -> None:
         self._detail_generation += 1
@@ -214,9 +213,17 @@ class SavesViewModel(QObject):
 
     @Slot(int, str, object)
     def _operation_succeeded(self, request_id: int, name: str, value: object) -> None:
-        if request_id == self._refresh_request:
+        if (
+            request_id == self._refresh_request
+            and self._refresh_context is not None
+            and name == f"saves.refresh:{self._refresh_context[0]}"
+            and self._refresh_context[1] == self._save_root
+        ):
+            before = self._public_values()
             self._refresh_request = None
+            self._refresh_context = None
             self._apply_refresh(value)
+            self._notify_if_changed(before)
             return
         if request_id != self._detail_request or self._detail_context is None:
             return
@@ -232,13 +239,23 @@ class SavesViewModel(QObject):
         self._detail_request = None
         self._detail_context = None
         self._details.apply(value)
+        before = self._public_values()
         self._set_values(details_state="ready")
+        self._notify_if_changed(before)
 
     @Slot(int, str, str)
     def _operation_failed(self, request_id: int, name: str, public_message: str) -> None:
-        if request_id == self._refresh_request:
+        if (
+            request_id == self._refresh_request
+            and self._refresh_context is not None
+            and name == f"saves.refresh:{self._refresh_context[0]}"
+            and self._refresh_context[1] == self._save_root
+        ):
+            before = self._public_values()
             self._refresh_request = None
+            self._refresh_context = None
             self._set_values(state="error", status_message="", error_message=public_message)
+            self._notify_if_changed(before)
             return
         if request_id != self._detail_request or self._detail_context is None:
             return
@@ -253,7 +270,9 @@ class SavesViewModel(QObject):
         self._detail_request = None
         self._detail_context = None
         self._details.clear()
+        before = self._public_values()
         self._set_values(details_state="error", error_message=public_message)
+        self._notify_if_changed(before)
 
     def _apply_refresh(self, value: object) -> None:
         if not isinstance(value, SaveSlotsLoadResult) or not value.is_success:
@@ -289,13 +308,26 @@ class SavesViewModel(QObject):
         return None
 
     def _set_values(self, **values: str) -> None:
-        changed = False
         for name, value in values.items():
             attribute = f"_{name}"
             if getattr(self, attribute) != value:
                 setattr(self, attribute, value)
-                changed = True
-        if changed:
+
+    def _public_values(self) -> tuple[str, str, str, str, str, bool, bool]:
+        return (
+            self._state,
+            self._details_state,
+            self.selectedSlotId,
+            self._status_message,
+            self._error_message,
+            self.canRefresh,
+            self.canCreateBackup,
+        )
+
+    def _notify_if_changed(
+        self, before: tuple[str, str, str, str, str, bool, bool]
+    ) -> None:
+        if self._public_values() != before:
             self.changed.emit()
 
     state = Property(str, lambda self: self._state, notify=changed)

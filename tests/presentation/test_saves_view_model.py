@@ -115,6 +115,57 @@ def test_refresh_moves_loading_to_ready_and_preserves_selection(
     assert vm.selectedSlotId == "save_2"
 
 
+def test_refresh_discards_pending_result_after_save_root_changes(
+    tmp_path: Path, qapp
+) -> None:
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    runner = ControlledOperationRunner()
+    vm = SavesViewModel(
+        runner,
+        loader=lambda path: loaded_result(
+            Path(path), (1,) if Path(path) == root_a else (2,)
+        ),
+    )
+    vm.setSaveRoot(str(root_a))
+    vm.refresh()
+    vm.setSaveRoot(str(root_b))
+
+    assert vm.canRefresh is True
+    vm.refresh()
+    runner.complete_next()
+
+    assert vm.state == "loading"
+    assert vm.slotsModel.rowCount() == 0
+
+    runner.complete_next()
+    assert vm.state == "ready"
+    assert vm.slotsModel.data(vm.slotsModel.index(0, 0), 257) == "save_2"
+
+
+def test_changed_emits_once_for_refresh_selection_and_clear(
+    tmp_path: Path, qapp
+) -> None:
+    runner = ControlledOperationRunner()
+    vm = configured_saves_view_model(runner, tmp_path)
+    changes: list[tuple[str, str, str]] = []
+    vm.changed.connect(
+        lambda: changes.append((vm.state, vm.detailsState, vm.selectedSlotId))
+    )
+
+    vm.refresh()
+    assert changes == [("loading", "idle", "")]
+    runner.complete_next()
+
+    changes.clear()
+    vm.selectSlot("save_1")
+    assert changes == [("ready", "loading", "save_1")]
+
+    changes.clear()
+    vm.clearSelection()
+    assert changes == [("ready", "idle", "")]
+
+
 def test_refresh_exposes_empty_result(tmp_path: Path, qapp) -> None:
     runner = ControlledOperationRunner()
     vm = SavesViewModel(runner, loader=lambda _path: loaded_result(tmp_path, ()))
