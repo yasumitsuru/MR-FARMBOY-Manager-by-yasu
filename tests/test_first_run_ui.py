@@ -29,10 +29,10 @@ def _widget(window, widget_type, object_name: str):
     return widget
 
 
-def test_first_run_configures_then_loads_saves_without_restarting(
+def test_first_run_configuration_loads_saves_without_restarting(
     qt_app: QApplication, tmp_path: Path
 ) -> None:
-    """A primeira configuração só carrega saves após o clique explícito."""
+    """A primeira configuração atualiza os saves imediatamente."""
     from mr_farmboy_manager.application import create_main_window
 
     save_directory = tmp_path / "saves"
@@ -78,11 +78,6 @@ def test_first_run_configures_then_loads_saves_without_restarting(
         assert path_input.text() == str(save_directory)
         assert path_status.text() == "Pasta dos saves válida."
         assert store.load() == AppSettings(save_directory=str(save_directory))
-        assert loaded_paths == []
-
-        load_button.click()
-        QApplication.processEvents()
-
         assert loaded_paths == [str(save_directory)]
         assert save_list.count() == 1
         assert save_list.item(0).text() == "save_1 — Slot 1 — 3 arquivos .tres"

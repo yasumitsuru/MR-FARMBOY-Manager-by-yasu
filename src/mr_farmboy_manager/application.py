@@ -284,7 +284,7 @@ def create_main_window(
             if selected is not None:
                 save_path_input.setText(str(selected))
                 update_save_path_status(save_path_input.text())
-                persist_save_directory_if_valid(save_path_input.text())
+                on_load_saves_clicked()
 
             return
 
@@ -297,7 +297,7 @@ def create_main_window(
         if selected_path:
             save_path_input.setText(selected_path)
             update_save_path_status(save_path_input.text())
-            persist_save_directory_if_valid(save_path_input.text())
+            on_load_saves_clicked()
 
     browse_save_path_button.clicked.connect(choose_save_directory)
     save_path_hint_label = QLabel("Caminho padrão provável: %APPDATA%\\Godot\\app_userdata\\MR FARMBOY\\game_data")
@@ -384,7 +384,7 @@ def create_main_window(
 
     def on_save_path_editing_finished() -> None:
         update_save_path_status(save_path_input.text())
-        persist_save_directory_if_valid(save_path_input.text())
+        on_load_saves_clicked()
 
     def on_game_install_path_editing_finished() -> None:
         update_game_install_path_status(game_install_path_input.text())
