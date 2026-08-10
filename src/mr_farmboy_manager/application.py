@@ -30,11 +30,13 @@ from PySide6.QtCore import QStandardPaths, Qt, QTimer
 
 from mr_farmboy_manager.backups import (
     BackupCreationResult,
+    BackupDeletionResult,
     BackupDiscoveryResult,
     BackupErrorCode,
     BackupRecord,
     BackupRestoreResult,
     create_backup,
+    delete_backup,
     discover_backups,
     restore_backup,
 )
@@ -87,6 +89,10 @@ BackupLoader = Callable[[Path], BackupDiscoveryResult]
 BackupRestorer = Callable[..., BackupRestoreResult]
 
 RestoreConfirmer = Callable[[BackupRecord], bool]
+
+BackupDeleter = Callable[..., BackupDeletionResult]
+
+DeleteConfirmer = Callable[[BackupRecord], bool]
 
 
 ManualSaveLoader = Callable[[str], SaveSlotsLoadResult]
@@ -212,6 +218,8 @@ def create_main_window(
     backup_loader: BackupLoader | None = None,
     backup_restorer: BackupRestorer | None = None,
     restore_confirmer: RestoreConfirmer | None = None,
+    backup_deleter: BackupDeleter | None = None,
+    delete_confirmer: DeleteConfirmer | None = None,
     backup_root: Path | str | None = None,
 ) -> QMainWindow:
     """Cria a janela principal da aplicação.
@@ -537,8 +545,13 @@ def create_main_window(
     restore_backup_button.setEnabled(False)
     backup_layout.addWidget(restore_backup_button)
 
+    delete_backup_button = QPushButton("Excluir backup selecionado")
+    delete_backup_button.setObjectName("delete_backup_button")
+    delete_backup_button.setEnabled(False)
+    backup_layout.addWidget(delete_backup_button)
+
     backup_management_status_label = QLabel(
-        "Selecione um backup para restaurar."
+        "Selecione um backup para restaurar ou excluir."
     )
     backup_management_status_label.setObjectName("backup_management_status_label")
     backup_management_status_label.setWordWrap(True)
@@ -564,6 +577,9 @@ def create_main_window(
     effective_backup_restorer = (
         backup_restorer if backup_restorer is not None else restore_backup
     )
+    effective_backup_deleter = (
+        backup_deleter if backup_deleter is not None else delete_backup
+    )
     _backups_for_selection: list[BackupRecord] = []
     selected_backup: BackupRecord | None = None
 
@@ -583,15 +599,18 @@ def create_main_window(
         nonlocal selected_backup
         selected_backup = None
         restore_backup_button.setEnabled(False)
+        delete_backup_button.setEnabled(False)
         backup_management_status_label.setText(
-            "Selecione um backup para restaurar."
+            "Selecione um backup para restaurar ou excluir."
         )
 
-    def sync_restore_action() -> None:
+    def sync_backup_management_actions() -> None:
         record = selected_backup
         if record is None:
             restore_backup_button.setEnabled(False)
+            delete_backup_button.setEnabled(False)
             return
+        delete_backup_button.setEnabled(True)
         if active_summary_for_backup(record) is None:
             restore_backup_button.setEnabled(False)
             backup_management_status_label.setText(
@@ -660,7 +679,7 @@ def create_main_window(
         _summaries_for_selection = new_summaries
         reset_save_slot_details()
         render_save_slot_summaries(empty_label, save_slots_list, new_summaries)
-        sync_restore_action()
+        sync_backup_management_actions()
 
     def apply_manual_load_result(result: SaveSlotsLoadResult) -> bool:
         """Aplica um resultado manual e informa se ele e valido."""
@@ -724,7 +743,7 @@ def create_main_window(
             return
 
         selected_backup = _backups_for_selection[current_row]
-        sync_restore_action()
+        sync_backup_management_actions()
 
     def confirm_restore(record: BackupRecord) -> bool:
         if restore_confirmer is not None:
@@ -737,6 +756,26 @@ def create_main_window(
             window,
             "Confirmar restauração",
             "Esta ação substituirá o save ativo após criar um backup preventivo.\n\n"
+            f"Slot: {record.slot_number}\n"
+            f"Data do backup: {created_at}\n"
+            f"Tamanho: {format_file_size(record.total_size_bytes)}\n"
+            f"ID: {record.backup_id}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def confirm_delete(record: BackupRecord) -> bool:
+        if delete_confirmer is not None:
+            return delete_confirmer(record)
+
+        created_at = record.created_at_utc.astimezone(timezone.utc).strftime(
+            "%Y-%m-%d %H:%M UTC"
+        )
+        answer = QMessageBox.warning(
+            window,
+            "Confirmar exclusão",
+            "Esta ação excluirá permanentemente o backup selecionado.\n\n"
             f"Slot: {record.slot_number}\n"
             f"Data do backup: {created_at}\n"
             f"Tamanho: {format_file_size(record.total_size_bytes)}\n"
@@ -790,6 +829,40 @@ def create_main_window(
                     active_summary_for_backup(selected_backup) is not None
                 )
 
+    def on_delete_backup_clicked() -> None:
+        record = selected_backup
+        if record is None:
+            reset_backup_management()
+            return
+        if not confirm_delete(record):
+            backup_management_status_label.setText("Exclusão cancelada.")
+            return
+
+        delete_backup_button.setEnabled(False)
+        backup_management_status_label.setText(
+            f"Excluindo backup do Slot {record.slot_number}..."
+        )
+        try:
+            result = effective_backup_deleter(
+                resolved_backup_root,
+                record.backup_id,
+                confirmed=True,
+            )
+        except Exception:
+            backup_management_status_label.setText(
+                "Não foi possível excluir o backup."
+            )
+        else:
+            if result.is_success:
+                refresh_backups()
+            backup_management_status_label.setText(result.public_message)
+        finally:
+            if selected_backup is not None:
+                delete_backup_button.setEnabled(True)
+                restore_backup_button.setEnabled(
+                    active_summary_for_backup(selected_backup) is not None
+                )
+
     def on_create_backup_clicked() -> None:
         summary = selected_summary
         if summary is None:
@@ -829,6 +902,7 @@ def create_main_window(
     backups_list.itemSelectionChanged.connect(on_backup_selected)
     create_backup_button.clicked.connect(on_create_backup_clicked)
     restore_backup_button.clicked.connect(on_restore_backup_clicked)
+    delete_backup_button.clicked.connect(on_delete_backup_clicked)
 
     render_save_slot_summaries(empty_label, save_slots_list, summaries)
     refresh_backups()
