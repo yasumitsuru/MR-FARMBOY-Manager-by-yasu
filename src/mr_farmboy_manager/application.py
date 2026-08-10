@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
 
+from mr_farmboy_manager import __version__
 from mr_farmboy_manager.backups import (
     BackupCreationResult,
     BackupDeletionResult,
@@ -252,7 +253,7 @@ def create_main_window(
             raise RuntimeError("QApplication não disponível e não foi fornecida.")
 
     window = QMainWindow()
-    window.setWindowTitle("MR FARMBOY Manager by yasu")
+    window.setWindowTitle(f"MR FARMBOY Manager {__version__} by yasu")
     window.resize(1000, 650)
 
     central_widget = QWidget()
@@ -261,7 +262,7 @@ def create_main_window(
     layout = QVBoxLayout()
     central_widget.setLayout(layout)
 
-    label_development = QLabel("Projeto em desenvolvimento")
+    label_development = QLabel(f"MR FARMBOY Manager — MVP {__version__}")
     label_development.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label_development.setWordWrap(True)
     layout.addWidget(label_development)

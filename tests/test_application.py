@@ -70,7 +70,7 @@ class TestInterface:
 
         window = create_main_window(qt_app)
 
-        assert window.windowTitle() == "MR FARMBOY Manager by yasu"
+        assert window.windowTitle() == "MR FARMBOY Manager 0.1.0 by yasu"
 
     def test_tamanho_janela_inicial(self, qt_app: Any) -> None:
         """Verifica que o tamanho inicial é 1000x650 pixels."""
@@ -84,8 +84,8 @@ class TestInterface:
         assert width == 1000
         assert height == 650
 
-    def test_contem_label_desenvolvimento(self, qt_app: Any) -> None:
-        """Verifica que a janela contém o label 'Projeto em desenvolvimento'."""
+    def test_contem_label_da_versao_mvp(self, qt_app: Any) -> None:
+        """Verifica que a janela identifica a versão MVP atual."""
         from mr_farmboy_manager.application import create_main_window
 
         window = create_main_window(qt_app)
@@ -96,7 +96,7 @@ class TestInterface:
 
         labels_text = [label.text() for label in labels]
 
-        assert "Projeto em desenvolvimento" in labels_text
+        assert "MR FARMBOY Manager — MVP 0.1.0" in labels_text
 
     def test_contem_label_nenhum_save_encontrado(self, qt_app: Any) -> None:
         """Verifica que a janela contém o label 'Nenhum save encontrado'."""

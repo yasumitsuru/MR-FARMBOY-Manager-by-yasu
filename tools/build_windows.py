@@ -21,6 +21,7 @@ def build_command(
     project_root: Path = PROJECT_ROOT,
 ) -> list[str]:
     entry_point = project_root / "tools" / "windows_entrypoint.py"
+    version_file = project_root / "packaging" / "windows_version_info.txt"
     build_root = project_root / "build" / "pyinstaller"
     return [
         str(python_executable),
@@ -41,6 +42,8 @@ def build_command(
         str(build_root / "work"),
         "--specpath",
         str(build_root),
+        "--version-file",
+        str(version_file),
         str(entry_point),
     ]
 

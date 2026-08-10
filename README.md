@@ -1,151 +1,111 @@
 # MR FARMBOY Manager by yasu
 
-## Status do Projeto
+Gerenciador desktop independente para localizar saves do MR FARMBOY, consultar
+detalhes sanitizados e manter backups locais com operações confirmadas.
 
-✅ **Estrutura inicial implementada**
+## Status
 
-- Aplicação PySide6 mínima funcionando
-- Carregamento binário básico de arquivos
-- Suite completa de testes (64 tests aprovados)
+**MVP 0.1.0 utilizável no Windows.**
 
----
+O MVP inclui:
 
-## Objetivo
+- descoberta de slots `save_<n>`;
+- leitura de progresso do jogador e cultivos em arquivos Godot `.tres`;
+- configuração persistente das pastas de saves e do jogo;
+- atualização ao configurar a pasta, manual e automática a cada cinco minutos;
+- criação, listagem, restauração e exclusão de backups;
+- backup preventivo antes de toda restauração;
+- mensagens sanitizadas e logging operacional rotativo;
+- executável Windows que não exige instalação manual do Python.
 
-O MR FARMBOY Manager é um painel desktop para análise financeira e gerenciamento da fazenda no jogo MR FARMBOY. As funcionalidades planejadas incluem:
+Dados financeiros e inventário detalhado continuam indisponíveis enquanto o schema
+correspondente do jogo não estiver confirmado.
 
-- **Leitura do Save**: ✅ Implementado - Leitura binária básica disponível
-- **Identificação de dados**: Identificar plantações, estoque, trabalhadores e quando esses dados estiverem disponíveis;
-- **Cálculos financeiros**:
-  - Calcular receita bruta;
-  - Calcular custos de plantio;
-  - Calcular custos de mão de obra;
-  - Calcular lucro líquido;
-- **Indicador de saúde financeira**: Informar se a fazenda está no azul, no vermelho ou no ponto de equilíbrio;
-- **Atualização automática**: Atualizar os dados automaticamente a cada 5 minutos;
-- **Atualização manual**: Possuir um botão para atualização manual.
+## Instalação no Windows
 
----
+1. Baixe e extraia o pacote completo da release. Não separe o `.exe` da pasta
+   `_internal`.
+2. Execute `MR-FARMBOY-Manager.exe`.
+3. Em **Pasta dos saves**, selecione a pasta `game_data` do jogo.
+4. Selecione um slot para consultar detalhes ou criar um backup.
 
-## Tecnologias Planejadas
+O executável é distribuído em formato `onedir` e não requer Python instalado.
+O MVP usa um ícone genérico; nenhum ícone ou recurso extraído do jogo é distribuído.
 
-- Python 3.12
-- PySide6 (Qt para Python)
-- SQLite (banco de dados local)
-- pytest (testes unitários)
+## Localização dos dados
 
----
-
-## Segurança do Save
-
-> ⚠️ **IMPORTANTE**: A integridade e segurança dos seus saves é fundamental.
-
-- O aplicativo será projetado para operar em **modo somente leitura** sobre o save;
-- A implementação deverá garantir que o **save original nunca seja modificado**;
-- A análise deverá ser realizada sobre uma **cópia temporária** do arquivo de save;
-- **Saves não devem ser enviados ao GitHub** por motivos de segurança e privacidade.
-
----
-
-## Fonte de dados e localização dos saves
-
-O save do jogo é a fonte de verdade do MR FARMBOY Manager.
-
-A aplicação não utiliza cadastro manual de fazenda. Informações como plantações,
-estoque, trabalhadores e dados financeiros devem ser extraídas dos arquivos do
-save.
-
-No Windows, a pasta base dos saves é:
+No Windows, a pasta padrão dos saves é:
 
 ```text
 %APPDATA%\Godot\app_userdata\MR FARMBOY\game_data
 ```
 
-O primeiro slot confirmado é:
+Backups e logs ficam na pasta local privada da aplicação, normalmente:
 
 ```text
-%APPDATA%\Godot\app_userdata\MR FARMBOY\game_data\save_1
+%LOCALAPPDATA%\yasu\MR FARMBOY Manager\backups
+%LOCALAPPDATA%\yasu\MR FARMBOY Manager\logs
 ```
 
-Os arquivos `.tres` ficam dentro da pasta `save_1`.
+Os caminhos configurados são persistidos pelo `QSettings` do Qt.
 
----
+## Segurança e privacidade
 
-## Recursos do Jogo
+- A inspeção trata saves e instalação do jogo como somente leitura.
+- Arquivos externos têm limites de tamanho, parsing e quantidade de avisos.
+- Links simbólicos, junctions/reparse points e mudanças concorrentes são rejeitados nas
+  operações sensíveis.
+- Criar um backup grava somente no diretório privado de backups.
+- Restaurar substitui o slot ativo apenas após confirmação e criação de backup
+  preventivo.
+- Excluir exige confirmação e atua somente sobre um backup íntegro e identificado.
+- Logs não armazenam o conteúdo integral dos saves.
+- Saves e recursos extraídos do jogo não devem ser enviados ao repositório.
 
-> ⚠️ **ATENÇÃO**: Não distribuímos recursos protegidos por direitos autorais.
+## Desenvolvimento
 
-- Ícones e recursos originais **não serão distribuídos** neste repositório;
-- Futuramente, o programa poderá **localizar recursos na instalação pertencente ao usuário**;
-- O projeto **não inclui arquivos extraídos do jogo**.
+Pré-requisito: Python 3.12 ou superior.
 
----
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+python -m mr_farmboy_manager
+pytest -q
+```
 
-## Sobre o Jogo
+Com `uv`, o ambiente travado pode ser reproduzido com:
 
-[MR FARMBOY](https://store.steampowered.com/app/2795090/MR_FARMBOY/) na Steam
+```powershell
+uv sync --extra dev --locked
+```
 
-Um jogo de gestão de fazenda desenvolvido e publicado por mrdboy.
+## Build e smoke test Windows
 
----
+```powershell
+.venv\Scripts\python.exe -m tools.build_windows
+.venv\Scripts\python.exe -m tools.smoke_windows_build
+```
 
-## Aviso Legal
+O build é gravado em:
 
-Este projeto **não é oficial** e:
+```text
+dist\MR-FARMBOY-Manager\MR-FARMBOY-Manager.exe
+```
 
-- Não é afiliado aos desenvolvedores ou publicadores do MR FARMBOY;
-- MR FARMBOY e seus recursos pertencem aos respectivos proprietários.
+O smoke test inicia o executável com `APPDATA`, `LOCALAPPDATA`, configuração, logs e
+backups isolados em um diretório temporário.
 
-Este é um projeto independente feito por fãs para fins de análise pessoal.
+## Sobre o jogo
 
----
+[MR FARMBOY](https://store.steampowered.com/app/2795090/MR_FARMBOY/) é
+desenvolvido e publicado por mrdboy.
 
-## Executando o projeto durante o desenvolvimento
-
-### Pré-requisitos
-
-- Python 3.12 ou superior
-
-### Passos para execução
-
-1. **Criar ou ativar o ambiente virtual**:
-
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
-
-2. **Instalar o projeto com dependências de desenvolvimento**:
-
-   ```bash
-   pip install --upgrade pip
-   pip install -e ".[dev]"
-   ```
-
-3. **Executar a aplicação**:
-
-   ```bash
-   python -m mr_farmboy_manager
-   ```
-
-4. **Executar os testes**:
-
-   ```bash
-   pytest tests/ -v
-   ```
-
----
-
-## Instalação
-
-🚧 **Em desenvolvimento**
-
-As instruções de instalação e os requisitos definitivos serão documentados quando existir uma versão executável do projeto.
-
----
+Este projeto não é oficial nem afiliado aos desenvolvedores ou publicadores do jogo.
+MR FARMBOY e seus recursos pertencem aos respectivos proprietários.
 
 ## Licença
 
-📜 **Ainda não definida**
-
-Este projeto ainda não possui uma licença oficial. Aguardando definição dos termos de uso e distribuição.
+O projeto ainda não possui uma licença de redistribuição definida. Na ausência de uma
+licença explícita, permanecem reservados os direitos aplicáveis ao código.

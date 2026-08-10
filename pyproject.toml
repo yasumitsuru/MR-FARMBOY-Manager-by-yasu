@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mr-farmboy-manager-by-yasu"
 version = "0.1.0"
-description = "Painel desktop para análise financeira e gerenciamento da fazenda no jogo MR FARMBOY."
+description = "Gerenciador desktop de saves e backups do jogo MR FARMBOY."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     { name = "yasu" }
 ]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
