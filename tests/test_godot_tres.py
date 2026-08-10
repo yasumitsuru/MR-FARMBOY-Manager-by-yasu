@@ -17,6 +17,7 @@ from mr_farmboy_manager.godot_tres import (
     GodotTresParseError,
     GodotTresProfile,
     is_godot_tres_text,
+    parse_godot_tres_document,
     parse_godot_tres_structure,
 )
 from mr_farmboy_manager.save_discovery import (
@@ -618,6 +619,31 @@ class TestIntegration:
 
 class TestWarningsAndStructure:
     """Warnings sanitizados e perfis vazios."""
+
+    @pytest.mark.parametrize(
+        "parser",
+        (parse_godot_tres_structure, parse_godot_tres_document),
+    )
+    def test_warnings_below_cap_are_preserved(self, parser):
+        """Catches a collector that drops valid diagnostics before the cap."""
+        data = make_tres("linha inválida\n" * 99)
+
+        result = parser(data)
+
+        assert result.sanitized_warnings == ("Linha fora de seção",) * 99
+
+    @pytest.mark.parametrize(
+        "parser",
+        (parse_godot_tres_structure, parse_godot_tres_document),
+    )
+    def test_warnings_above_cap_keep_prefix_and_report_omission(self, parser):
+        """Catches unbounded diagnostic collection from malformed TRES input."""
+        data = make_tres("linha inválida\n" * 101)
+
+        result = parser(data)
+
+        assert result.sanitized_warnings[:-1] == ("Linha fora de seção",) * 100
+        assert result.sanitized_warnings[-1] == "Avisos adicionais omitidos: 1"
 
     def test_property_outside_section_warns(self):
         profile = profile_of('solta = 1\n[resource]\na = 2\n')

@@ -37,6 +37,7 @@ MAX_GODOT_LOGICAL_LINE_LENGTH = 4 * 1024 * 1024  # 4 MB de texto por linha lógi
 MAX_GODOT_NESTING_DEPTH = 128  # profundidade maxima de (), [] e {}
 MAX_GODOT_PROPERTY_COUNT = 1_000_000  # propriedades max. por arquivo
 MAX_GODOT_SECTION_COUNT = 100_000  # secoes max. por arquivo
+MAX_GODOT_SANITIZED_WARNING_COUNT = 100  # avisos retidos por arquivo
 
 
 class GodotTresParseError(ValueError):
@@ -514,6 +515,25 @@ def _ensure_header_or_raise(
     raise GodotTresParseError("Conteúdo antes do cabeçalho gd_resource")
 
 
+class _SanitizedWarningCollector:
+    """Retém avisos sanitizados até o limite e conta os demais."""
+
+    def __init__(self) -> None:
+        self._warnings: list[str] = []
+        self._omitted_count = 0
+
+    def add(self, warning: str) -> None:
+        if len(self._warnings) < MAX_GODOT_SANITIZED_WARNING_COUNT:
+            self._warnings.append(warning)
+        else:
+            self._omitted_count += 1
+
+    def as_tuple(self) -> tuple[str, ...]:
+        if self._omitted_count:
+            return (*self._warnings, f"Avisos adicionais omitidos: {self._omitted_count}")
+        return tuple(self._warnings)
+
+
 # ---------------------------------------------------------------------------
 # Modelos tipados do documento (repr sempre redigido)
 # ---------------------------------------------------------------------------
@@ -625,7 +645,7 @@ def parse_godot_tres_structure(data: bytes) -> GodotTresProfile:
     text = _decode_text(data)
     scanner = _LogicalLineScanner(text)
     tracker = _SharedSectionTracker()
-    warnings: list[str] = []
+    warnings = _SanitizedWarningCollector()
     category_counts: dict[str, int] = {}
 
     for line in scanner:
@@ -638,7 +658,7 @@ def parse_godot_tres_structure(data: bytes) -> GodotTresProfile:
         if _is_section_line(stripped):
             keyword = _section_keyword(stripped)
             if keyword not in _KNOWN_SECTIONS:
-                warnings.append("Seção desconhecida")
+                warnings.add("Seção desconhecida")
             tracker.handle(keyword, stripped)
             continue
         eq_index = _find_top_level_equals(stripped)
@@ -646,16 +666,16 @@ def parse_godot_tres_structure(data: bytes) -> GodotTresProfile:
             key_part = stripped[:eq_index].strip()
             rhs = stripped[eq_index + 1:]
             if not key_part:
-                warnings.append("Propriedade sem chave")
+                warnings.add("Propriedade sem chave")
                 continue
             # Propriedades validas apenas em secoes [resource] ou [sub_resource]
             if not tracker.property_in_valid_section():
-                warnings.append("Propriedade fora de seção")
+                warnings.add("Propriedade fora de seção")
             tracker.bump_property()
             category = _classify_rhs(rhs)
             category_counts[category] = category_counts.get(category, 0) + 1
             continue
-        warnings.append("Linha fora de seção")
+        warnings.add("Linha fora de seção")
 
     if not tracker.header_seen:
         raise GodotTresParseError("Cabeçalho gd_resource ausente")
@@ -672,7 +692,7 @@ def parse_godot_tres_structure(data: bytes) -> GodotTresProfile:
         variant_category_counts=tuple(sorted(category_counts.items())),
         has_gd_resource_header=tracker.has_header,
         is_valid=True,
-        sanitized_warnings=tuple(warnings),
+        sanitized_warnings=warnings.as_tuple(),
     )
 
 
@@ -695,7 +715,7 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
     text = _decode_text(data)
     scanner = _LogicalLineScanner(text)
     tracker = _SharedSectionTracker()
-    warnings: list[str] = []
+    warnings = _SanitizedWarningCollector()
     sections: list[GodotTresSection] = []
     property_lists: list[list[GodotTresProperty]] = []
     property_ordinal = 0
@@ -725,7 +745,7 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
         if _is_section_line(stripped):
             keyword = _section_keyword(stripped)
             if keyword not in _KNOWN_SECTIONS:
-                warnings.append("Seção desconhecida")
+                warnings.add("Seção desconhecida")
             tracker.handle(keyword, stripped)
             if keyword == "ext_resource":
                 _append_section(GodotTresSectionKind.EXT_RESOURCE, stripped)
@@ -741,10 +761,10 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
             key = stripped[:eq_index].strip()
             rhs = stripped[eq_index + 1:]
             if not key:
-                warnings.append("Propriedade sem chave")
+                warnings.add("Propriedade sem chave")
                 continue
             if not tracker.property_in_valid_section():
-                warnings.append("Propriedade fora de seção")
+                warnings.add("Propriedade fora de seção")
             tracker.bump_property()
             try:
                 value = parse_godot_variant(rhs)
@@ -756,7 +776,7 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
                 # Apenas erros de sintaxe/valores nao suportados recuperaveis viram OPAQUE
                 value = GodotVariant(kind=GodotVariantKind.OPAQUE)
                 opaque_count += 1
-                warnings.append("Valor não interpretado")
+                warnings.add("Valor não interpretado")
             if property_lists:
                 property_lists[-1].append(
                     GodotTresProperty(
@@ -768,7 +788,7 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
                 )
             property_ordinal += 1
             continue
-        warnings.append("Linha fora de seção")
+        warnings.add("Linha fora de seção")
 
     if not tracker.header_seen:
         raise GodotTresParseError("Cabeçalho gd_resource ausente")
@@ -791,7 +811,7 @@ def parse_godot_tres_document(data: bytes) -> GodotTresDocument:
         parsed_variant_count=parsed_count,
         opaque_variant_count=opaque_count,
         max_nesting_depth=scanner.max_depth,
-        sanitized_warnings=tuple(warnings),
+        sanitized_warnings=warnings.as_tuple(),
     )
 
 
