@@ -742,15 +742,24 @@ def restore_backup(
                 BackupErrorCode.RESTORE_BACKUP_INVALID,
                 "O backup selecionado mudou durante a restauração.",
             )
+        if staging_identity is None:
+            raise _BackupOperationFailure(
+                BackupErrorCode.RESTORE_STAGING_FAILED,
+                "Não foi possível preparar os arquivos da restauração.",
+            )
 
         _publish_restored_slot(
+            active_root,
             location.source,
             staging,
             rollback,
             current_manifest,
             active_root_chain,
+            active_root_state,
             active_slot_state,
             active_entries,
+            staging_identity,
+            staging_entries,
         )
         staging = None
 
@@ -1122,27 +1131,35 @@ def _copy_backup_payload_to_staging(
 
 
 def _publish_restored_slot(
+    active_root: Path,
     active_slot: Path,
     staging: Path,
     rollback: Path,
     manifest: BackupManifest,
     active_root_chain: tuple[_PathIdentity, ...],
+    expected_active_root_state: os.stat_result,
     expected_active_state: os.stat_result,
     expected_active_entries: tuple[_SourceEntry, ...],
+    expected_staging_state: os.stat_result,
+    expected_staging_entries: tuple[_SourceEntry, ...],
 ) -> None:
     old_moved = False
     restored_moved = False
     try:
         _assert_directory_chain(active_root_chain)
-        if os.path.lexists(rollback):
-            raise OSError
         current_active_state = os.lstat(active_slot)
         if (
             not _same_stat_identity(current_active_state, expected_active_state)
             or _inventory_source_slot(active_slot) != expected_active_entries
         ):
             raise OSError
-        os.rename(active_slot, rollback)
+        _rename_validated_directory(
+            active_slot,
+            rollback,
+            active_root,
+            expected_active_root_state,
+            expected_active_state,
+        )
         old_moved = True
         moved_state = os.lstat(rollback)
         if (
@@ -1153,7 +1170,18 @@ def _publish_restored_slot(
         _assert_directory_chain(active_root_chain)
         if os.path.lexists(active_slot):
             raise OSError
-        os.rename(staging, active_slot)
+        if (
+            not _same_stat_identity(os.lstat(staging), expected_staging_state)
+            or _inventory_source_slot(staging) != expected_staging_entries
+        ):
+            raise OSError
+        _rename_validated_directory(
+            staging,
+            active_slot,
+            active_root,
+            expected_active_root_state,
+            expected_staging_state,
+        )
         restored_moved = True
         _assert_directory_chain(active_root_chain)
         _validate_payload_against_manifest(active_slot, manifest)
@@ -1165,10 +1193,22 @@ def _publish_restored_slot(
                 if restored_moved:
                     if os.path.lexists(staging):
                         raise OSError
-                    os.rename(active_slot, staging)
+                    _rename_validated_directory(
+                        active_slot,
+                        staging,
+                        active_root,
+                        expected_active_root_state,
+                        expected_staging_state,
+                    )
                 if os.path.lexists(active_slot):
                     raise OSError
-                os.rename(rollback, active_slot)
+                _rename_validated_directory(
+                    rollback,
+                    active_slot,
+                    active_root,
+                    expected_active_root_state,
+                    expected_active_state,
+                )
             except (OSError, _BackupOperationFailure) as rollback_error:
                 raise _BackupOperationFailure(
                     BackupErrorCode.RESTORE_ROLLBACK_FAILED,
@@ -1211,6 +1251,27 @@ def _remove_restore_directory(
     raise OSError
 
 
+def _rename_validated_directory(
+    source: Path,
+    destination: Path,
+    root: Path,
+    expected_root_state: os.stat_result,
+    expected_source_state: os.stat_result,
+) -> None:
+    """Renomeia somente a identidade validada dentro da raiz ancorada."""
+    if os.name != "nt":
+        # Não há rename condicional por identidade em uma API POSIX portátil.
+        # Falhar antes de mutar é mais seguro que voltar a um pathname solto.
+        raise OSError
+    _rename_validated_directory_windows(
+        source,
+        destination,
+        root,
+        expected_root_state,
+        expected_source_state,
+    )
+
+
 def _quarantine_backup_directory(
     target: Path,
     quarantine: Path,
@@ -1219,12 +1280,7 @@ def _quarantine_backup_directory(
     expected_target_state: os.stat_result,
 ) -> None:
     """Move a identidade validada para quarentena antes da remoção física."""
-    if os.name != "nt":
-        # Não existe rename condicional por identidade em uma API POSIX
-        # portátil. Falhar antes de qualquer mutação é mais seguro que mover um
-        # pathname que possa ter sido trocado depois da validação.
-        raise OSError
-    _quarantine_backup_directory_windows(
+    _rename_validated_directory(
         target,
         quarantine,
         root,
@@ -1234,6 +1290,23 @@ def _quarantine_backup_directory(
 
 
 def _quarantine_backup_directory_windows(
+    target: Path,
+    quarantine: Path,
+    root: Path,
+    expected_root_state: os.stat_result,
+    expected_target_state: os.stat_result,
+) -> None:
+    """Compatibilidade interna para a primitive Win32 de quarentena."""
+    _rename_validated_directory_windows(
+        target,
+        quarantine,
+        root,
+        expected_root_state,
+        expected_target_state,
+    )
+
+
+def _rename_validated_directory_windows(
     target: Path,
     quarantine: Path,
     root: Path,

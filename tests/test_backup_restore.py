@@ -212,18 +212,22 @@ def test_publish_failure_rolls_original_slot_back(
 
     game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
     _replace_active_contents(slot)
-    real_rename = backups_module.os.rename
+    real_rename = backups_module._rename_validated_directory
     calls = 0
 
-    def fail_second_rename(source, destination, *args, **kwargs):
+    def fail_second_rename(source, destination, root, root_state, source_state):
         nonlocal calls
         if Path(source).parent == game_data:
             calls += 1
             if calls == 2:
                 raise PermissionError("locked-private-path")
-        return real_rename(source, destination, *args, **kwargs)
+        return real_rename(source, destination, root, root_state, source_state)
 
-    monkeypatch.setattr(backups_module.os, "rename", fail_second_rename)
+    monkeypatch.setattr(
+        backups_module,
+        "_rename_validated_directory",
+        fail_second_rename,
+    )
     result = restore_backup(
         slot,
         game_data,
@@ -291,18 +295,18 @@ def test_restore_keeps_staging_tree_when_failed_publish_cleanup_inventory_change
 
     game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
     _replace_active_contents(slot)
-    real_rename = backups_module.os.rename
+    real_rename = backups_module._rename_validated_directory
     real_remove = backups_module._remove_restore_directory
     rename_calls = 0
     injected: Path | None = None
 
-    def fail_publish(source, destination, *args, **kwargs):
+    def fail_publish(source, destination, root, root_state, source_state):
         nonlocal rename_calls
         if Path(source).parent == game_data:
             rename_calls += 1
             if rename_calls == 2:
                 raise PermissionError("locked-private-path")
-        return real_rename(source, destination, *args, **kwargs)
+        return real_rename(source, destination, root, root_state, source_state)
 
     def inject_extra_before_cleanup(path, *args, **kwargs):
         nonlocal injected
@@ -312,7 +316,11 @@ def test_restore_keeps_staging_tree_when_failed_publish_cleanup_inventory_change
             injected.write_bytes(b"must-stay")
         return real_remove(path, *args, **kwargs)
 
-    monkeypatch.setattr(backups_module.os, "rename", fail_publish)
+    monkeypatch.setattr(
+        backups_module,
+        "_rename_validated_directory",
+        fail_publish,
+    )
     monkeypatch.setattr(
         backups_module,
         "_remove_restore_directory",
@@ -345,18 +353,24 @@ def test_failed_rollback_reports_partial_state_and_preserves_both_directories(
 
     game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
     _replace_active_contents(slot)
-    real_rename = backups_module.os.rename
+    real_rename = backups_module._rename_validated_directory
     calls = 0
 
-    def fail_publish_and_rollback(source, destination, *args, **kwargs):
+    def fail_publish_and_rollback(
+        source, destination, root, root_state, source_state
+    ):
         nonlocal calls
         if Path(source).parent == game_data:
             calls += 1
             if calls >= 2:
                 raise PermissionError("locked-private-path")
-        return real_rename(source, destination, *args, **kwargs)
+        return real_rename(source, destination, root, root_state, source_state)
 
-    monkeypatch.setattr(backups_module.os, "rename", fail_publish_and_rollback)
+    monkeypatch.setattr(
+        backups_module,
+        "_rename_validated_directory",
+        fail_publish_and_rollback,
+    )
     result = restore_backup(
         slot,
         game_data,
@@ -407,28 +421,31 @@ def test_cleanup_failure_reports_success_with_pending_cleanup(
     assert str(tmp_path) not in result.public_message
 
 
-def test_active_slot_swap_at_first_rename_is_detected_without_deleting_replacement(
+@pytest.mark.skipif(__import__("os").name != "nt", reason="proteção Win32")
+def test_active_slot_swap_before_identity_handle_open_is_not_moved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import mr_farmboy_manager.backups as backups_module
+    from mr_farmboy_manager import save_details as secure_reader
 
     game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
     _replace_active_contents(slot)
     displaced_original = game_data / "attacker-preserved-original"
+    real_open = secure_reader._open_win32_handle
     real_rename = backups_module.os.rename
     swapped = False
 
-    def swap_before_rename(source, destination, *args, **kwargs):
+    def swap_then_open(path, access, flags):
         nonlocal swapped
-        source_path = Path(source)
-        if not swapped and source_path == slot.path:
+        candidate = Path(path)
+        if not swapped and candidate == slot.path and access & 0x00010000:
             swapped = True
             real_rename(slot.path, displaced_original)
             slot.path.mkdir()
             (slot.path / "foreign.tres").write_bytes(b"foreign-data")
-        return real_rename(source, destination, *args, **kwargs)
+        return real_open(path, access, flags)
 
-    monkeypatch.setattr(backups_module.os, "rename", swap_before_rename)
+    monkeypatch.setattr(secure_reader, "_open_win32_handle", swap_then_open)
     result = restore_backup(
         slot,
         game_data,
@@ -442,6 +459,57 @@ def test_active_slot_swap_at_first_rename_is_detected_without_deleting_replaceme
     assert (slot.path / "foreign.tres").read_bytes() == b"foreign-data"
     assert (displaced_original / "player_data.tres").read_bytes() == b"current-active"
     assert not any(path.name.startswith(".restore-") for path in game_data.iterdir())
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="proteção Win32")
+def test_staging_swap_before_identity_handle_open_is_not_published_or_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mr_farmboy_manager.backups as backups_module
+    from mr_farmboy_manager import save_details as secure_reader
+
+    game_data, slot, backup_root, selected = _create_selected_backup(tmp_path)
+    _replace_active_contents(slot)
+    preserved_staging = game_data / "attacker-preserved-staging"
+    real_open = secure_reader._open_win32_handle
+    real_rename = backups_module.os.rename
+    swapped = False
+
+    def swap_then_open(path, access, flags):
+        nonlocal swapped
+        candidate = Path(path)
+        if (
+            not swapped
+            and candidate.name.startswith(".restore-staging-save_1-")
+            and access & 0x00010000
+        ):
+            swapped = True
+            real_rename(candidate, preserved_staging)
+            candidate.mkdir()
+            (candidate / "foreign.tres").write_bytes(b"foreign-data")
+        return real_open(path, access, flags)
+
+    monkeypatch.setattr(secure_reader, "_open_win32_handle", swap_then_open)
+    result = restore_backup(
+        slot,
+        game_data,
+        backup_root,
+        selected.backup_id,
+        confirmed=True,
+    )
+
+    assert not result.is_success
+    assert result.cleanup_pending
+    assert result.error_code is BackupErrorCode.RESTORE_CLEANUP_PENDING
+    assert (slot.path / "player_data.tres").read_bytes() == b"current-active"
+    assert (preserved_staging / "player_data.tres").read_bytes() == b"selected-backup"
+    staging_replacement = next(
+        path
+        for path in game_data.iterdir()
+        if path.name.startswith(".restore-staging-save_1-")
+    )
+    assert (staging_replacement / "foreign.tres").read_bytes() == b"foreign-data"
+    assert not any(path.name.startswith(".restore-old-") for path in game_data.iterdir())
 
 
 @pytest.mark.skipif(__import__("os").name != "nt", reason="proteção Win32")
