@@ -141,6 +141,7 @@ def test_discover_backups_reports_invalid_entries_by_basename_only(
     corrupt.mkdir()
     (corrupt / BACKUP_MANIFEST_FILENAME).write_text("{", encoding="utf-8")
     (root / ".staging-operacao-interrompida").mkdir()
+    (root / ".delete-trash-operacao-interrompida").mkdir()
 
     result = discover_backups(root)
 
@@ -157,6 +158,7 @@ def test_discover_backups_reports_invalid_entries_by_basename_only(
     )
     assert all(str(tmp_path) not in entry for entry in result.invalid_entries)
     assert ".staging-operacao-interrompida" not in result.invalid_entries
+    assert ".delete-trash-operacao-interrompida" not in result.invalid_entries
 
 
 def test_discover_backups_rejects_mismatched_or_traversing_manifest(

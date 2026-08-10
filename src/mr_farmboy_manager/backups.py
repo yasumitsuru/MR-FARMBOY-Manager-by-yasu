@@ -55,6 +55,11 @@ class BackupErrorCode(str, Enum):
     RESTORE_PUBLISH_FAILED = "restore_publish_failed"
     RESTORE_ROLLBACK_FAILED = "restore_rollback_failed"
     RESTORE_CLEANUP_PENDING = "restore_cleanup_pending"
+    DELETE_NOT_CONFIRMED = "delete_not_confirmed"
+    DELETE_BACKUP_NOT_FOUND = "delete_backup_not_found"
+    DELETE_BACKUP_INVALID = "delete_backup_invalid"
+    DELETE_FAILED = "delete_failed"
+    DELETE_CLEANUP_PENDING = "delete_cleanup_pending"
 
 
 class BackupValidationError(ValueError):
@@ -161,6 +166,23 @@ class BackupRestoreResult:
         return self.restored_backup is not None and self.error_code in {
             None,
             BackupErrorCode.RESTORE_CLEANUP_PENDING,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class BackupDeletionResult:
+    """Resultado sanitizado da exclusão de um backup confirmado."""
+
+    deleted_backup_id: str | None
+    error_code: BackupErrorCode | None
+    public_message: str
+    cleanup_pending: bool = False
+
+    @property
+    def is_success(self) -> bool:
+        return self.deleted_backup_id is not None and self.error_code in {
+            None,
+            BackupErrorCode.DELETE_CLEANUP_PENDING,
         }
 
 
@@ -499,7 +521,7 @@ def discover_backups(backup_root: Path | str) -> BackupDiscoveryResult:
         with os.scandir(root) as iterator:
             entries = sorted(iterator, key=lambda entry: entry.name)
         for entry in entries:
-            if entry.name.startswith(".staging-"):
+            if entry.name.startswith((".staging-", ".delete-trash-")):
                 continue
             try:
                 records.append(_read_backup_record(root, Path(entry.path)))
@@ -801,6 +823,188 @@ def restore_backup(
     return result
 
 
+def delete_backup(
+    backup_root: Path | str,
+    backup_id: str,
+    *,
+    confirmed: bool,
+) -> BackupDeletionResult:
+    """Exclui somente um backup íntegro, filho direto da raiz validada."""
+    if confirmed is not True:
+        return BackupDeletionResult(
+            None,
+            BackupErrorCode.DELETE_NOT_CONFIRMED,
+            "A exclusão não foi confirmada.",
+        )
+
+    try:
+        parsed_slot, _parsed_timestamp = _parse_backup_id(backup_id)
+        _reject_existing_reparse_components(
+            backup_root,
+            BackupErrorCode.DELETE_BACKUP_INVALID,
+            "A pasta de backups não é segura.",
+        )
+        root_input = _resolve_required_absolute_path(
+            backup_root,
+            BackupErrorCode.DELETE_BACKUP_INVALID,
+            "A pasta de backups é inválida.",
+        )
+        if not os.path.lexists(root_input):
+            raise _BackupOperationFailure(
+                BackupErrorCode.DELETE_BACKUP_NOT_FOUND,
+                "O backup selecionado não existe.",
+            )
+        initial_chain = _capture_existing_directory_chain(
+            root_input,
+            BackupErrorCode.DELETE_BACKUP_INVALID,
+            "A pasta de backups não é segura.",
+        )
+        root = root_input.resolve(strict=True)
+        root_state = os.lstat(root)
+        if not stat.S_ISDIR(root_state.st_mode) or _has_reparse_attribute(root_state):
+            raise _BackupOperationFailure(
+                BackupErrorCode.DELETE_BACKUP_INVALID,
+                "A pasta de backups não é segura.",
+            )
+        root_chain = _capture_directory_chain(root)
+        _assert_directory_chain(
+            initial_chain,
+            BackupErrorCode.DELETE_BACKUP_INVALID,
+            "A pasta de backups mudou durante a exclusão.",
+        )
+
+        target = root / backup_id
+        if target.parent != root or not os.path.lexists(target):
+            raise _BackupOperationFailure(
+                BackupErrorCode.DELETE_BACKUP_NOT_FOUND,
+                "O backup selecionado não existe.",
+            )
+        record, manifest, inventory = _load_validated_backup_for_delete(
+            root,
+            target,
+            parsed_slot,
+        )
+        target_state = os.lstat(target)
+
+        _assert_directory_chain(
+            root_chain,
+            BackupErrorCode.DELETE_FAILED,
+            "A pasta de backups mudou durante a exclusão.",
+        )
+        current_record, current_manifest, current_inventory = (
+            _load_validated_backup_for_delete(
+                root,
+                target,
+                parsed_slot,
+            )
+        )
+        if (
+            current_record != record
+            or current_manifest != manifest
+            or current_inventory != inventory
+            or not _same_stat_identity(os.lstat(target), target_state)
+        ):
+            raise _BackupOperationFailure(
+                BackupErrorCode.DELETE_BACKUP_INVALID,
+                "O backup selecionado mudou durante a exclusão.",
+            )
+
+        quarantine = root / f".delete-trash-{backup_id}-{secrets.token_hex(8)}"
+        if os.path.lexists(quarantine):
+            raise OSError
+        _quarantine_backup_directory(
+            target,
+            quarantine,
+            root,
+            root_state,
+            target_state,
+        )
+
+        try:
+            quarantine_state = os.lstat(quarantine)
+            if (
+                os.path.lexists(target)
+                or not _same_stat_identity(quarantine_state, target_state)
+                or _inventory_source_slot(quarantine) != inventory
+            ):
+                raise OSError
+            _remove_restore_directory(
+                quarantine,
+                root,
+                root_chain,
+                target_state,
+                expected_entries=inventory,
+            )
+            if os.path.lexists(quarantine):
+                raise OSError
+        except (
+            BackupValidationError,
+            _BackupOperationFailure,
+            OSError,
+            TypeError,
+            ValueError,
+        ):
+            return BackupDeletionResult(
+                backup_id,
+                BackupErrorCode.DELETE_CLEANUP_PENDING,
+                "O backup foi excluído, mas uma limpeza temporária ficou pendente.",
+                cleanup_pending=True,
+            )
+        return BackupDeletionResult(
+            backup_id,
+            None,
+            f"Backup excluído com sucesso: {backup_id}.",
+        )
+    except BackupValidationError as error:
+        return BackupDeletionResult(None, error.code, error.public_message)
+    except _BackupOperationFailure as error:
+        return BackupDeletionResult(None, error.code, error.public_message)
+    except (OSError, TypeError, ValueError):
+        return BackupDeletionResult(
+            None,
+            BackupErrorCode.DELETE_FAILED,
+            "Não foi possível excluir o backup.",
+        )
+
+
+def _load_validated_backup_for_delete(
+    root: Path,
+    target: Path,
+    expected_slot_number: int,
+) -> tuple[BackupRecord, BackupManifest, tuple[_SourceEntry, ...]]:
+    try:
+        target_state = os.lstat(target)
+        if (
+            not stat.S_ISDIR(target_state.st_mode)
+            or _has_reparse_attribute(target_state)
+        ):
+            raise ValueError
+        with os.scandir(target) as iterator:
+            top_level_names = {entry.name for entry in iterator}
+        if top_level_names != {BACKUP_MANIFEST_FILENAME, BACKUP_PAYLOAD_DIRECTORY}:
+            raise ValueError
+        record, manifest = _read_backup_record_and_manifest(root, target)
+        if record.slot_number != expected_slot_number:
+            raise ValueError
+        _validate_payload_against_manifest(
+            target / BACKUP_PAYLOAD_DIRECTORY,
+            manifest,
+        )
+        inventory = _inventory_source_slot(target)
+        return record, manifest, inventory
+    except (
+        BackupValidationError,
+        _BackupOperationFailure,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise _BackupOperationFailure(
+            BackupErrorCode.DELETE_BACKUP_INVALID,
+            "O backup selecionado está inválido ou incompleto.",
+        ) from error
+
+
 def _load_validated_backup_for_restore(
     root: Path,
     destination: Path,
@@ -977,6 +1181,8 @@ def _remove_restore_directory(
     active_root: Path,
     active_root_chain: tuple[_PathIdentity, ...],
     expected_state: os.stat_result,
+    *,
+    expected_entries: tuple[_SourceEntry, ...] | None = None,
 ) -> None:
     _assert_directory_chain(active_root_chain)
     if directory.parent != active_root:
@@ -989,8 +1195,17 @@ def _remove_restore_directory(
     ):
         raise OSError
     if os.name == "nt":
-        _remove_restore_directory_windows(directory, expected_state)
+        _remove_restore_directory_windows(
+            directory,
+            expected_state,
+            expected_entries=expected_entries,
+        )
         return
+    if expected_entries is not None:
+        # POSIX does not offer a portable unlink-by-handle primitive.  A
+        # quarantined backup therefore stays pending instead of risking that a
+        # pathname swap makes cleanup delete an entry outside its inventory.
+        raise OSError
     if not shutil.rmtree.avoids_symlink_attacks:
         raise OSError
     if not _same_stat_identity(os.lstat(directory), expected_state):
@@ -998,9 +1213,166 @@ def _remove_restore_directory(
     shutil.rmtree(directory)
 
 
+def _quarantine_backup_directory(
+    target: Path,
+    quarantine: Path,
+    root: Path,
+    expected_root_state: os.stat_result,
+    expected_target_state: os.stat_result,
+) -> None:
+    """Move a identidade validada para quarentena antes da remoção física."""
+    if os.name != "nt":
+        # Não existe rename condicional por identidade em uma API POSIX
+        # portátil. Falhar antes de qualquer mutação é mais seguro que mover um
+        # pathname que possa ter sido trocado depois da validação.
+        raise OSError
+    _quarantine_backup_directory_windows(
+        target,
+        quarantine,
+        root,
+        expected_root_state,
+        expected_target_state,
+    )
+
+
+def _quarantine_backup_directory_windows(
+    target: Path,
+    quarantine: Path,
+    root: Path,
+    expected_root_state: os.stat_result,
+    expected_target_state: os.stat_result,
+) -> None:
+    """Renomeia pelo handle Win32 da própria identidade validada."""
+    import ctypes
+    import ntpath
+    from ctypes import wintypes
+
+    from . import save_details as secure_reader
+
+    class _FileRenameInfo(ctypes.Structure):
+        _fields_ = [
+            ("replace_or_flags", wintypes.DWORD),
+            ("root_directory", wintypes.HANDLE),
+            ("file_name_length", wintypes.DWORD),
+            ("file_name", wintypes.WCHAR * 1),
+        ]
+
+    class _IoStatusBlock(ctypes.Structure):
+        _fields_ = [
+            ("status_or_pointer", ctypes.c_void_p),
+            ("information", ctypes.c_size_t),
+        ]
+
+    ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+    nt_set_information = ntdll.NtSetInformationFile
+    nt_set_information.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_IoStatusBlock),
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.c_int,
+    ]
+    nt_set_information.restype = wintypes.LONG
+    delete_access = 0x00010000
+    file_rename_information_class = 10
+    root_handle: int | None = None
+    target_handle: int | None = None
+    renamed = False
+
+    try:
+        if target.parent != root or quarantine.parent != root:
+            raise OSError
+        root_handle = secure_reader._open_win32_handle(
+            root,
+            secure_reader._FILE_READ_ATTRIBUTES,
+            secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+            | secure_reader._FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        root_information = secure_reader._get_win32_file_information(root_handle)
+        root_final_path = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(root_handle)
+        )
+        expected_root_path = ntpath.normpath(str(root)).rstrip("\\/").casefold()
+        if (
+            root_information.file_index != expected_root_state.st_ino
+            or root_final_path != expected_root_path
+            or root_information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or not root_information.attributes
+            & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+        ):
+            raise OSError
+
+        target_handle = secure_reader._open_win32_handle(
+            target,
+            delete_access | secure_reader._FILE_READ_ATTRIBUTES,
+            secure_reader._FILE_FLAG_BACKUP_SEMANTICS
+            | secure_reader._FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+        target_information = secure_reader._get_win32_file_information(target_handle)
+        target_final_path = secure_reader._normalize_win32_final_path(
+            secure_reader._get_win32_final_path(target_handle)
+        )
+        expected_target_path = ntpath.normpath(str(target)).rstrip("\\/").casefold()
+        if (
+            target_information.file_index != expected_target_state.st_ino
+            or target_final_path != expected_target_path
+            or ntpath.dirname(target_final_path) != root_final_path
+            or target_information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
+            or not target_information.attributes
+            & secure_reader._FILE_ATTRIBUTE_DIRECTORY
+        ):
+            raise OSError
+
+        encoded_name = quarantine.name.encode("utf-16-le")
+        file_name_offset = _FileRenameInfo.file_name.offset
+        buffer_size = max(
+            ctypes.sizeof(_FileRenameInfo),
+            file_name_offset + len(encoded_name) + ctypes.sizeof(wintypes.WCHAR),
+        )
+        buffer = ctypes.create_string_buffer(buffer_size)
+        information = ctypes.cast(
+            buffer,
+            ctypes.POINTER(_FileRenameInfo),
+        ).contents
+        information.replace_or_flags = 0
+        information.root_directory = root_handle
+        information.file_name_length = len(encoded_name)
+        ctypes.memmove(
+            ctypes.addressof(buffer) + file_name_offset,
+            encoded_name,
+            len(encoded_name),
+        )
+        io_status = _IoStatusBlock()
+        status = nt_set_information(
+            target_handle,
+            ctypes.byref(io_status),
+            ctypes.byref(buffer),
+            buffer_size,
+            file_rename_information_class,
+        )
+        if status < 0:
+            raise OSError
+        renamed = True
+    finally:
+        active_error = sys.exception()
+        close_error: OSError | None = None
+        for handle in (target_handle, root_handle):
+            if handle is None:
+                continue
+            try:
+                secure_reader._close_win32_handle(handle)
+            except OSError as error:
+                if close_error is None:
+                    close_error = error
+        if close_error is not None and active_error is None and not renamed:
+            raise close_error
+
+
 def _remove_restore_directory_windows(
     directory: Path,
     expected_state: os.stat_result,
+    *,
+    expected_entries: tuple[_SourceEntry, ...] | None = None,
 ) -> None:
     """Remove a árvore exata por handles Win32 sem seguir substituições."""
     import ctypes
@@ -1023,8 +1395,29 @@ def _remove_restore_directory_windows(
     delete_access = 0x00010000
     file_disposition_info_class = 4
 
-    def remove_node(path: Path, expected: os.stat_result) -> None:
-        is_directory = stat.S_ISDIR(expected.st_mode)
+    expected_children: dict[str, list[_SourceEntry]] = {}
+    if expected_entries is not None:
+        for entry in expected_entries:
+            parent = PurePosixPath(entry.relative_path).parent.as_posix()
+            expected_children.setdefault("" if parent == "." else parent, []).append(
+                entry
+            )
+        for children in expected_children.values():
+            children.sort(key=lambda entry: entry.relative_path)
+
+    def remove_node(
+        path: Path,
+        expected: os.stat_result | _SourceEntry,
+        relative_path: str = "",
+    ) -> None:
+        is_directory = (
+            expected.is_directory
+            if isinstance(expected, _SourceEntry)
+            else stat.S_ISDIR(expected.st_mode)
+        )
+        expected_inode = (
+            expected.inode if isinstance(expected, _SourceEntry) else expected.st_ino
+        )
         flags = secure_reader._FILE_FLAG_OPEN_REPARSE_POINT
         if is_directory:
             flags |= secure_reader._FILE_FLAG_BACKUP_SEMANTICS
@@ -1045,7 +1438,7 @@ def _remove_restore_directory_windows(
                 information.attributes & secure_reader._FILE_ATTRIBUTE_DIRECTORY
             )
             if (
-                information.file_index != expected.st_ino
+                information.file_index != expected_inode
                 or final_path != expected_path
                 or information.attributes & _FILE_ATTRIBUTE_REPARSE_POINT
                 or handle_is_directory != is_directory
@@ -1053,15 +1446,53 @@ def _remove_restore_directory_windows(
                 raise OSError
 
             if is_directory:
-                children = sorted(os.scandir(path), key=lambda entry: entry.name)
-                for child in children:
-                    child_path = Path(child.path)
-                    child_state = os.lstat(child_path)
-                    if _has_reparse_attribute(child_state):
+                with os.scandir(path) as iterator:
+                    children = sorted(iterator, key=lambda entry: entry.name)
+                if expected_entries is None:
+                    children_to_remove: list[
+                        tuple[Path, os.stat_result | _SourceEntry, str]
+                    ] = []
+                    for child in children:
+                        child_path = Path(child.path)
+                        child_state = os.lstat(child_path)
+                        if _has_reparse_attribute(child_state):
+                            raise OSError
+                        children_to_remove.append((child_path, child_state, ""))
+                else:
+                    expected_for_directory = expected_children.get(relative_path, [])
+                    expected_names = {
+                        PurePosixPath(entry.relative_path).name
+                        for entry in expected_for_directory
+                    }
+                    if {child.name for child in children} != expected_names:
                         raise OSError
-                    remove_node(child_path, child_state)
-                if any(os.scandir(path)):
-                    raise OSError
+                    children_to_remove = []
+                    for child_expected in expected_for_directory:
+                        child_name = PurePosixPath(child_expected.relative_path).name
+                        child_path = path / child_name
+                        child_state = os.lstat(child_path)
+                        if (
+                            _has_reparse_attribute(child_state)
+                            or _source_entry(
+                                child_expected.relative_path,
+                                child_state,
+                            )
+                            != child_expected
+                        ):
+                            raise OSError
+                        children_to_remove.append(
+                            (
+                                child_path,
+                                child_expected,
+                                child_expected.relative_path,
+                            )
+                        )
+
+                for child_path, child_expected, child_relative_path in children_to_remove:
+                    remove_node(child_path, child_expected, child_relative_path)
+                with os.scandir(path) as iterator:
+                    if next(iterator, None) is not None:
+                        raise OSError
 
             disposition = _FileDispositionInfo(1)
             if not set_file_information(
