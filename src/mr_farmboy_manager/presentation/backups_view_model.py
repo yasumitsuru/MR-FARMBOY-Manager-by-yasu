@@ -153,9 +153,11 @@ class BackupsViewModel(QObject):
         pending = self._pending_confirmation
         if pending is None or pending[:2] != (action, backup_id):
             return
+        before = self._public_values()
         record = self._backup_for(backup_id)
         if record is None or self._selected_backup_id != backup_id:
             self._clear_confirmation()
+            self._notify_if_changed(before)
             return
         if action == "restore":
             confirmed_summary = pending[2]
@@ -165,6 +167,7 @@ class BackupsViewModel(QObject):
                 or self._summary_for(record) is not confirmed_summary
             ):
                 self._clear_confirmation()
+                self._notify_if_changed(before)
                 return
             self._clear_confirmation()
             self._submit_mutation(
@@ -188,6 +191,7 @@ class BackupsViewModel(QObject):
             )
             return
         self._clear_confirmation()
+        self._notify_if_changed(before)
 
     @Slot()
     def cancelConfirmation(self) -> None:

@@ -149,16 +149,22 @@ def test_restore_rejects_same_slot_from_changed_save_root(tmp_path: Path, qapp) 
     restorer = Mock()
     vm, runner, record = ready_backups_vm(tmp_path, restorer=restorer)
     vm.selectBackup(record.backup_id)
+    changes: list[tuple[bool, bool, bool]] = []
+    vm.changed.connect(
+        lambda: changes.append((vm.canCreate, vm.canRestore, vm.canDelete))
+    )
 
     vm.requestRestore()
     vm.setSelectedSummary(
         SaveSlotSummary(SaveSlot(1, tmp_path / "other_root" / "save_1"), 2)
     )
+    changes.clear()
     vm.confirmAction("restore", record.backup_id)
 
     assert restorer.call_count == 0
     assert vm.mutationState == "idle"
     assert runner._pending == []
+    assert changes == [(True, True, True)]
 
 
 def test_discovery_error_exposes_only_public_message(tmp_path: Path, qapp) -> None:
