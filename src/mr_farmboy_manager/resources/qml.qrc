@@ -1,0 +1,18 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="qml/Main.qml">../qml/Main.qml</file>
+    <file alias="qml/Theme.qml">../qml/Theme.qml</file>
+    <file alias="qml/qmldir">../qml/qmldir</file>
+    <file alias="qml/components/AppShell.qml">../qml/components/AppShell.qml</file>
+    <file alias="qml/components/AppCard.qml">../qml/components/AppCard.qml</file>
+    <file alias="qml/components/AppButton.qml">../qml/components/AppButton.qml</file>
+    <file alias="qml/components/MetricCard.qml">../qml/components/MetricCard.qml</file>
+    <file alias="qml/components/StatusBadge.qml">../qml/components/StatusBadge.qml</file>
+    <file alias="qml/components/SidebarItem.qml">../qml/components/SidebarItem.qml</file>
+    <file alias="qml/components/SectionHeader.qml">../qml/components/SectionHeader.qml</file>
+    <file alias="qml/components/EmptyState.qml">../qml/components/EmptyState.qml</file>
+    <file alias="qml/components/InlineMessage.qml">../qml/components/InlineMessage.qml</file>
+    <file alias="qml/components/InfoRow.qml">../qml/components/InfoRow.qml</file>
+    <file alias="qml/components/ConfirmActionDialog.qml">../qml/components/ConfirmActionDialog.qml</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,980 @@
+# Resource object code (Python 3)
+# Created by: object code
+# Created by: The Resource Compiler for Qt version 6.11.1
+# WARNING! All changes made in this file will be lost!
+
+from PySide6 import QtCore
+
+qt_resource_data = b"\
+\x00\x00\x01\x7f\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Con\
+trols\x0aimport \x22co\
+mponents\x22\x0aimport\
+ \x22.\x22 as AppTheme\
+\x0a\x0aApplicationWin\
+dow {\x0a    object\
+Name: \x22mainWindo\
+w\x22\x0a    width: 13\
+66\x0a    height: 7\
+68\x0a    minimumWi\
+dth: 960\x0a    min\
+imumHeight: 640\x0a\
+    visible: tru\
+e\x0a    color: App\
+Theme.Theme.back\
+ground\x0a    title\
+: \x22MR FARMBOY Ma\
+nager\x22\x0a\x0a    AppS\
+hell {\x0a        a\
+nchors.fill: par\
+ent\x0a        cont\
+roller: appContr\
+oller\x0a    }\x0a}\x0a\
+\x00\x00\x02\x9c\
+\x00\
+\x00\x09Nx\xda\x8d\x95Os\x9b0\x10\xc5\xef|\x0a\
+\x8d{n\xc2?c\xec\x9b1a\x9aCZ\xc7\xa4\xed\
+Y\x885Q\x0d\x12\x15KRO\xa7\xdf\xbd\x12\xd8I\
+\xd3\x99 3\xc3\x81\xe1\xf7\xa4\xb7\xab}\xd0*Z5\
+\x94\xe4\x5cT5\xa0\x14\x0eoZ\xa9\x90\xdc\xe3}\xcf\
+\xd9\xc1q\xee\xf1K\xf1\x03\x18\x92\xdf\x0e\xd1\xd7\xf55\
+I\xa9:|\xdcs\xd5!i\xa9\x16!\x5c\x0d\xaf\x14\
+\xd0R\x8a\xfaHZ%[Px$L\xd6R\x91\x82\
+\xb2C\xa5d/\xca\x15\x99}p\x13/\xf4\xdc\xd9\xa4\
+\xa2\xe3%\x14T\x0dx\xe6m\xbc\xc8\x82\xf7jO\x19\
+\x18\xdc\x0b\xfd\xc0\xdb\x5c\x84\xef(\xef`\xb0\xe4\xad\xfd\
+\xd4\x0f/\x12\xdd\xf58j|7\x88\xfcdZC\x19\
+\x03\x81\x86\x8e\xa3\xcd2\xca.\xa1sTRTF\x13\
+\x05\xebtn\xad\x5c\x8b\xba\xce\xe0\xf3\xe5f\x1e[\x0c\
+=S%\xf8\xb8\xfa\xcd<Y\xce-\x8d\x02\xa5\xe4p\
+\x087\xe9b\x11\xa5\xd30\xc2/\xdc*\xdePu4\
+\x92\xcc\xcf\xa2,\xb0Kr`R\x94'\xd1z\x99$\
+\x89k\x17\xbd\x9c\xc2\x22\x8c\x17\x0bK\x15\x85T%\x0c\
+e\xf8\xcb0\x08\x16\xd3\xf4^\xb2^\xf7s<\x8cI\
+\xb2\xe4\x1d-j\xe3\xe3\xc5\xd2\xb4qEE\xd7R5\
+\x8e\xc4?O3\xe7\x9c\xac\x1dt\xa0\x9e\xa0$\xf0\xb3\
+\xe7O:[\x02;r\x00h\x09>\x82\xb9\x1b \xeb\
+\xed-\xe9\xd0\xec\xac\xbd\xea\xa9!\xfb\x1e{\x05\xa4\xe6\
+\xd5#\x92F\x96\x964\x0e\x5c\xf2&\x92\x97\x9c\xd5 \
+\xcb_\x83\x96\x0d\xd7\x05\x9a\x87\xb7sq\x0e\xe8;B\
+.\x90\xe8\xb60\x08W$\xb41\xf1\x8a\xc46\xc6\xf3\
+W\xc4\xf3\xadT\xa4\xa9\xc8F\xf9\xee\x8a\xf8\xae\x95\xd2\
+\xd6}\xab\xf7@\xfb\x0a\xac\xbeB\xbdc8\xb5\xa3\xa2\
+%\xef\xbb\x8d\x14\xfa\xb3QO\xb7\xe3\x84RUZ:\
+2\x82[*\xa0\xb6te\x8c\xd6w^\xe2\xa3&'\
+@6\x1a\xfc\x04f\x22t\xe1S\x8b\xb6\xe3\xb0\xac\x19\
+r)\xce\x0a\xdd\x84w$\x1d*\xfdI3ilk\
+z\xcc\xe4\x90\xae\x1c*\x09\xe4\xeb-\xf9F\x15\x1f\xb2\
+\x92\x8e\xefg\xd3\xab\x14\xb2\xfc\x7f\x09\x8b\xa2G^s\
+<\x8b6\xb4c\xba{\x94\xdcI!g\x13E>\x0f\
+u\xed\xa0\xeak\xf3\x9f3\xf2\xab\xcfR5\xb4\xb6\x8a\
+rhx!\xeb\xf2\xa4J\xf5c\xa2\x1f\xad\xba\xe4U\
+c\xe1\xf1\xd8\xc2\x1d \xb5\xcc\x89\xc1\x12\xdd0\x8d\x85\
+\x16\xccL\xdd\x03\xc7\x1a,\x03e\xd8-\xad\xe0\xc4\xfa\
+\xbe\xdd\xa5\xe2L\x83\xf1\xd4\x07\xa5\x91f\x942\xda\xa1\
+\xa9\xc8\xb5\x929R\xf3K29\x89.\xa0k\xf9\xac\
+\xc9\xd8u\xfe8\x7f\x01\x1b\x9d\x1dS\
+\x00\x00\x00/\
+m\
+odule MrFarmboy\x0a\
+singleton Theme \
+1.0 Theme.qml\x0a\
+\x00\x00\x05\x1f\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Con\
+trols\x0aimport QtQ\
+uick.Layouts\x0aimp\
+ort \x22..\x22 as AppT\
+heme\x0a\x0aDialog {\x0a \
+   id: dialog\x0a  \
+  property strin\
+g action: \x22\x22\x0a   \
+ property string\
+ backupId: \x22\x22\x0a  \
+  property strin\
+g confirmationTi\
+tle: \x22Confirmar \
+a\xc3\xa7\xc3\xa3o\x22\x0a    prop\
+erty string conf\
+irmationMessage:\
+ \x22\x22\x0a    signal c\
+onfirmed(string \
+action, string b\
+ackupId)\x0a    sig\
+nal cancelled()\x0a\
+    modal: true\x0a\
+    focus: true\x0a\
+    title: confi\
+rmationTitle\x0a   \
+ standardButtons\
+: Dialog.NoButto\
+n\x0a    background\
+: Rectangle { co\
+lor: AppTheme.Th\
+eme.surface; rad\
+ius: AppTheme.Th\
+eme.radiusPanel;\
+ border.width: A\
+ppTheme.Theme.bo\
+rderWidth; borde\
+r.color: AppThem\
+e.Theme.border }\
+\x0a    contentItem\
+: ColumnLayout {\
+\x0a        spacing\
+: AppTheme.Theme\
+.space16\x0a       \
+ Text { text: di\
+alog.confirmatio\
+nMessage; color:\
+ AppTheme.Theme.\
+textPrimary; fon\
+t.family: AppThe\
+me.Theme.bodyFon\
+t; font.pixelSiz\
+e: AppTheme.Them\
+e.typeBody; wrap\
+Mode: Text.WordW\
+rap; Layout.pref\
+erredWidth: 360 \
+}\x0a        RowLay\
+out {\x0a          \
+  Layout.fillWid\
+th: true\x0a       \
+     Item { Layo\
+ut.fillWidth: tr\
+ue }\x0a           \
+ AppButton { tex\
+t: \x22Cancelar\x22; o\
+nClicked: { dial\
+og.cancelled(); \
+dialog.close() }\
+ }\x0a            A\
+ppButton { text:\
+ \x22Confirmar\x22; va\
+riant: dialog.ac\
+tion === \x22delete\
+\x22 ? \x22danger\x22 : \x22\
+primary\x22; onClic\
+ked: { dialog.co\
+nfirmed(dialog.a\
+ction, dialog.ba\
+ckupId); dialog.\
+close() } }\x0a    \
+    }\x0a    }\x0a}\x0a\
+\x00\x00\x06h\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Con\
+trols\x0aimport \x22..\
+\x22 as AppTheme\x0a\x0aB\
+utton {\x0a    prop\
+erty string vari\
+ant: \x22secondary\x22\
+\x0a    property st\
+ring tooltipText\
+: \x22\x22\x0a    implici\
+tHeight: variant\
+ === \x22primary\x22 ?\
+ AppTheme.Theme.\
+primaryActionHei\
+ght : AppTheme.T\
+heme.controlHeig\
+ht\x0a    implicitW\
+idth: Math.max(A\
+ppTheme.Theme.co\
+ntrolHeight, con\
+tentItem.implici\
+tWidth + AppThem\
+e.Theme.space24)\
+\x0a    focusPolicy\
+: Qt.StrongFocus\
+\x0a    Accessible.\
+name: text\x0a    T\
+oolTip.visible: \
+hovered && toolt\
+ipText.length > \
+0\x0a    ToolTip.te\
+xt: tooltipText\x0a\
+\x0a    background:\
+ Rectangle {\x0a   \
+     radius: App\
+Theme.Theme.radi\
+usControl\x0a      \
+  border.width: \
+AppTheme.Theme.b\
+orderWidth\x0a     \
+   border.color:\
+ parent.activeFo\
+cus ? AppTheme.T\
+heme.focus : (pa\
+rent.variant ===\
+ \x22primary\x22 ? App\
+Theme.Theme.acce\
+nt : (parent.var\
+iant === \x22danger\
+\x22 ? AppTheme.The\
+me.error : AppTh\
+eme.Theme.border\
+))\x0a        color\
+: parent.variant\
+ === \x22primary\x22 ?\
+ (parent.down ? \
+AppTheme.Theme.a\
+ccentStrong : Ap\
+pTheme.Theme.acc\
+ent) : (parent.h\
+overed ? AppThem\
+e.Theme.surfaceR\
+aised : AppTheme\
+.Theme.surface)\x0a\
+        opacity:\
+ parent.enabled \
+? 1 : 0.55\x0a     \
+   Behavior on c\
+olor { ColorAnim\
+ation { duration\
+: AppTheme.Theme\
+.motionFast } }\x0a\
+    }\x0a    conten\
+tItem: Text {\x0a  \
+      text: pare\
+nt.text\x0a        \
+color: parent.va\
+riant === \x22prima\
+ry\x22 ? AppTheme.T\
+heme.background \
+: (parent.varian\
+t === \x22danger\x22 ?\
+ AppTheme.Theme.\
+error : AppTheme\
+.Theme.textPrima\
+ry)\x0a        font\
+.family: AppThem\
+e.Theme.bodyFont\
+\x0a        font.we\
+ight: AppTheme.T\
+heme.weightSemib\
+old\x0a        font\
+.pixelSize: AppT\
+heme.Theme.typeB\
+ody\x0a        hori\
+zontalAlignment:\
+ Text.AlignHCent\
+er\x0a        verti\
+calAlignment: Te\
+xt.AlignVCenter\x0a\
+        elide: T\
+ext.ElideRight\x0a \
+   }\x0a}\x0a\
+\x00\x00\x02\xa0\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Lay\
+outs\x0aimport \x22..\x22\
+ as AppTheme\x0a\x0aIt\
+em {\x0a    propert\
+y string label: \
+\x22\x22\x0a    property \
+string value: \x22\x22\
+\x0a    implicitHei\
+ght: AppTheme.Th\
+eme.controlHeigh\
+t\x0a    RowLayout \
+{\x0a        anchor\
+s.fill: parent\x0a \
+       spacing: \
+AppTheme.Theme.s\
+pace12\x0a        T\
+ext { text: labe\
+l; color: AppThe\
+me.Theme.textSec\
+ondary; font.fam\
+ily: AppTheme.Th\
+eme.bodyFont; fo\
+nt.pixelSize: Ap\
+pTheme.Theme.typ\
+eBody; Layout.fi\
+llWidth: true; e\
+lide: Text.Elide\
+Right }\x0a        \
+Text { text: val\
+ue; color: AppTh\
+eme.Theme.textPr\
+imary; font.fami\
+ly: AppTheme.The\
+me.utilityFont; \
+font.pixelSize: \
+AppTheme.Theme.t\
+ypeMeta; horizon\
+talAlignment: Te\
+xt.AlignRight; e\
+lide: Text.Elide\
+Left }\x0a    }\x0a}\x0a\
+\x00\x00\x03f\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Lay\
+outs\x0aimport \x22..\x22\
+ as AppTheme\x0a\x0aAp\
+pCard {\x0a    prop\
+erty string titl\
+e: \x22Nenhum dado \
+dispon\xc3\xadvel\x22\x0a   \
+ property string\
+ message: \x22Escol\
+ha uma a\xc3\xa7\xc3\xa3o pa\
+ra continuar.\x22\x0a \
+   property alia\
+s action: action\
+Slot.data\x0a    im\
+plicitHeight: 17\
+6\x0a    ColumnLayo\
+ut {\x0a        anc\
+hors.fill: paren\
+t\x0a        anchor\
+s.margins: AppTh\
+eme.Theme.space2\
+4\x0a        spacin\
+g: AppTheme.Them\
+e.space8\x0a       \
+ Text { text: ti\
+tle; color: AppT\
+heme.Theme.textP\
+rimary; font.fam\
+ily: AppTheme.Th\
+eme.displayFont;\
+ font.pixelSize:\
+ AppTheme.Theme.\
+typeCardTitle; f\
+ont.weight: AppT\
+heme.Theme.weigh\
+tBold }\x0a        \
+Text { text: mes\
+sage; color: App\
+Theme.Theme.text\
+Secondary; font.\
+family: AppTheme\
+.Theme.bodyFont;\
+ font.pixelSize:\
+ AppTheme.Theme.\
+typeBody; wrapMo\
+de: Text.WordWra\
+p; Layout.fillWi\
+dth: true }\x0a    \
+    Item { id: a\
+ctionSlot; Layou\
+t.fillWidth: tru\
+e; Layout.fillHe\
+ight: true }\x0a   \
+ }\x0a}\x0a\
+\x00\x00\x02\xfd\
+i\
+mport QtQuick\x0aim\
+port \x22..\x22 as App\
+Theme\x0a\x0aRectangle\
+ {\x0a    property \
+string severity:\
+ \x22info\x22\x0a    prop\
+erty string mess\
+age: \x22\x22\x0a    impl\
+icitHeight: mess\
+ageText.implicit\
+Height + AppThem\
+e.Theme.space16\x0a\
+    color: AppTh\
+eme.Theme.surfac\
+eMuted\x0a    radiu\
+s: AppTheme.Them\
+e.radiusControl\x0a\
+    border.width\
+: AppTheme.Theme\
+.borderWidth\x0a   \
+ border.color: s\
+everity === \x22err\
+or\x22 ? AppTheme.T\
+heme.error : (se\
+verity === \x22warn\
+ing\x22 ? AppTheme.\
+Theme.warning : \
+AppTheme.Theme.b\
+order)\x0a    Text \
+{ id: messageTex\
+t; anchors.fill:\
+ parent; anchors\
+.margins: AppThe\
+me.Theme.space8;\
+ text: parent.me\
+ssage; color: pa\
+rent.severity ==\
+= \x22error\x22 ? AppT\
+heme.Theme.error\
+ : AppTheme.Them\
+e.textSecondary;\
+ wrapMode: Text.\
+WordWrap; font.f\
+amily: AppTheme.\
+Theme.bodyFont; \
+font.pixelSize: \
+AppTheme.Theme.t\
+ypeBody }\x0a}\x0a\
+\x00\x00\x03\x18\
+i\
+mport QtQuick\x0aim\
+port \x22..\x22 as App\
+Theme\x0a\x0aRectangle\
+ {\x0a    property \
+string status: \x22\
+neutral\x22\x0a    pro\
+perty string lab\
+el: \x22\x22\x0a    impli\
+citWidth: badgeT\
+ext.implicitWidt\
+h + AppTheme.The\
+me.space16\x0a    i\
+mplicitHeight: A\
+ppTheme.Theme.co\
+ntrolHeight\x0a    \
+radius: AppTheme\
+.Theme.radiusCon\
+trol\x0a    color: \
+AppTheme.Theme.s\
+urfaceMuted\x0a    \
+border.width: Ap\
+pTheme.Theme.bor\
+derWidth\x0a    bor\
+der.color: statu\
+s === \x22error\x22 ? \
+AppTheme.Theme.e\
+rror : (status =\
+== \x22warning\x22 ? A\
+ppTheme.Theme.wa\
+rning : (status \
+=== \x22success\x22 ? \
+AppTheme.Theme.s\
+uccess : AppThem\
+e.Theme.border))\
+\x0a    Accessible.\
+name: label\x0a    \
+Text { id: badge\
+Text; anchors.ce\
+nterIn: parent; \
+text: label; col\
+or: parent.borde\
+r.color; font.fa\
+mily: AppTheme.T\
+heme.bodyFont; f\
+ont.pixelSize: A\
+ppTheme.Theme.ty\
+peMeta; font.wei\
+ght: AppTheme.Th\
+eme.weightSemibo\
+ld }\x0a}\x0a\
+\x00\x00\x03\xb6\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Lay\
+outs\x0aimport \x22..\x22\
+ as AppTheme\x0a\x0aIt\
+em {\x0a    propert\
+y string title: \
+\x22\x22\x0a    property \
+string subtitle:\
+ \x22\x22\x0a    property\
+ alias action: a\
+ctionSlot.data\x0a \
+   implicitHeigh\
+t: Math.max(text\
+Column.implicitH\
+eight, actionSlo\
+t.implicitHeight\
+)\x0a    RowLayout \
+{\x0a        anchor\
+s.fill: parent\x0a \
+       spacing: \
+AppTheme.Theme.s\
+pace16\x0a        C\
+olumnLayout {\x0a  \
+          id: te\
+xtColumn\x0a       \
+     Layout.fill\
+Width: true\x0a    \
+        spacing:\
+ AppTheme.Theme.\
+space4\x0a         \
+   Text { text: \
+title; color: Ap\
+pTheme.Theme.tex\
+tPrimary; font.f\
+amily: AppTheme.\
+Theme.displayFon\
+t; font.pixelSiz\
+e: AppTheme.Them\
+e.typePageTitle;\
+ font.weight: Ap\
+pTheme.Theme.wei\
+ghtBold }\x0a      \
+      Text { vis\
+ible: subtitle.l\
+ength > 0; text:\
+ subtitle; color\
+: AppTheme.Theme\
+.textSecondary; \
+font.family: App\
+Theme.Theme.body\
+Font; font.pixel\
+Size: AppTheme.T\
+heme.typeBody }\x0a\
+        }\x0a      \
+  Item { id: act\
+ionSlot; Layout.\
+alignment: Qt.Al\
+ignRight | Qt.Al\
+ignVCenter }\x0a   \
+ }\x0a}\x0a\
+\x00\x00\x05\xc7\
+\x00\
+\x00\x17\xbex\xda\xb5X\xcd\x8e\xdb6\x10\xbe\xfb)X\
+\x1d\x82\x0d\x90\x0a\xce&iS9iao\x1a$@\
+v\x9b\xc4\xdb\x16E\x90\x03%\xd16\x1b\x8a\x14H\xca\
+^'\xd8C\x8f\x05zn\xd1^S\xa0\xa7\x9e\x8a>\
+\xc1\xbeI\x9e\xa4CJ\x96\xf5C\xc9\xde\xddF\x07[\
+$g\x86?3\x9a\xef\x1b\xd2$\x15R\xa3\x17\xfaE\
+F\xa37\x03Zk\xfaG\x82k)\x98j\xf6?\xc3\
+k\x91\xe9\xb2\xdb\xf3}\x0fa\x85\xc6iz\xba \x09\
+\x19\x0c\x9ej\x92\xa0w\x03\x04\x0f\x8d\x03\xa4\x16\x841\
+\xdbJ\xa5H\x89\xd4k\xb4\xc4\x12E\xb9yFd}\
+\x8cr\x8d\xa2LJ\xc2\xf5S\x1e\x93\xb3\x00\x0d\xad\x80\
+$8\x16\x9c\xad\xb7\x92\xa1\x10\x0c\xadhLN\xf0\x92\
+\xce\xb1\xa6\x82\x07\xa6\xad\x17\xe8\xcb\x87\xe8\xf6\xe1\xb0W\
+Qb\xca\x9c\x8a_\x0c\x87\xe8\xc6\x8d\xa2\xfd`\xa7\x9d\
+X\xe2\x15\x91mK\x0f\x8c\xa1\x0eE\xb3\xff\x14\xcf\xc9\
+)\xd5\x8c\xa8\x00\xbd\xf2\xbe\xa3\xea\xe2\xbd@\xb1\x80\xbd\
+3M\x97\xc2\xbb\x85\xbc)^\x12e^&8z\x93\
+\xa5\xf6\x15\xbc2\xa3\xf3L\xe2\x8b\xbf.\xfe\xcdG\x1f\
+Q<\xe7\x17\xff(M#\xa1\xbc\xd7;\xe6\x9c\xae\x93\
+\x10\xbcj&\xfd\xf0\xdb\xcfF\xff\xc3\xaf\x7f\xe6\x7f\xef\
+\xed\xdf\x1f\xbf\xdb\xbf_~\x02S\xd6\xd6,\xe3\x91\xd9\
+\x19\xe2\xf9&\xc9\x015\x8e\xb9Y\xf8\xd8<U\x87\xa1\
+\x87\xc8\x8e\x97\x83\xf9\x09\xf9\x11\x13\x8a\x1c\xdc\xb4\xdd\xe7\
+\xb9\xe5\x97$\xd2\x98\xcf\x19A\xef\x10\xe6\xd1BH\xe5\
+\xcf(c\x01\xac\xd4\xd8\x1bA\x940!\x832\xb8\xfc\
+\xfc7\x84\xf3\x98K\x91\xf1\xb8\xb4$Vy\x5cV\x16\
+\xe5\xb2X\x0e\xaa\x14G\x94\xcf7\xd1\xd5XM\xd9W\
+\x061\x84Y\x88e\xad?\x9f\xd0\x9a\x7fB\xe8|\xa1\
+\x03\xa4eF\x5c2\xa9$3\x02G\x14\x7fob\xa3\
+\xf8&\xfcz\xec\xa2\xaf\xd0\xe1\x9dC\x14\xa0\xfb\xc3\x9a\
+\x89%U4d$@\x9f\xe4Z\xcd\x80\xab\x09\xbb\xcf\
+\xcb\xb5\xfa\x09Y\x80\x09!\x11\xcc\xec\x5c%\xf8\xe4$\
+KB\x22\xc7\x9c&\xf9\x0a\xdf\xa1\x18\x22/\x8f\xf2\xc6\
+\x14\x890\xddS&V\xe8\x1c\x9cR\x9d\xe9H\xb0,\
+\xe1-\xf7\xec\xe5\xa6\xa6P\x82\xe5\x9cr\xd5\xde!\xb8\
+\x93\xdc\xfe\xac\xa5W\xba\xd9)\x7f\xd8\x92?%g\xb0\
+F\xa4\xe1\xaf\xd3K\xde\xf1K\xf4x\xfc\xf2x\xf2\xcd\
+\x0f\x1e\xb8\x0b\x9a^W\xa0\x1a;\xcf%\x1c\x9f\x5c\x8f\
+\xd0\x0c2\x9e?\xc3\x09e\xeb\x96`LU\xca\xf0\xfa\
+\xb10Ao\x05SzF\xd8\x94\xbe%\x9d\xebh\xce\
+\xb5N\xc9\x11\x96\xb1M*(p\x0dOD\xbcY\xc7\
+\xaa\x88\xd8\x86T\xde=\x11,\x1eU\xe3\xbb\x08[\x13\
+\xde#\x04\x8e\xa0o\xc1\x06fcF\xe7<\x01\x7fu\
+\xae\xd1\x9c\xa7o\xc5\x9e\x91\x99\x86Um;\x9e\x1c\x81\
+\x22\x91\x8d`i\xa6\x85\xaeE4C\xf6\x89{?\xa1\
+\x901\x91V\xb33\x99X\x11\xe72R\x82\xcd\x0a\xdb\
+1k\x9eD\xc4\x04\x02\xf6\x9esp\x9a\x7fq\x15(\
+t=\x22\xfc\x11\xb6z\x82\x13b\xd21\xa4\xd7GX\
+-B\x01N4)\x18\xda%\x02\xc0{\x05\x04\xcc\x08\
+\xd1\x1a\x02{\xd3\xb4\x18 \x0c\x04\x00\x02\xbc\xb2\xf9\xf7\
+u\xe7\xb4\xee3\xed\x14\x8fD\x02_K\xe9\xe3:p\
+vj1\x1c\x9a\xe3\xc9u\xb6`\xb7km\xca\xc2S\
+U\xaf\x00\xac\x9d\x8a\x84\xc1Y\x92\x0d\xe1\xf0\xeb\x90\xf4\
+\xb0\x09J-W\xf01\x80\xdc\x12W,4\xe0\xce\xa9\
+\xda\x8e\x9avO\x1e\x04]p\xe1P\x98j\xac35\
+\xc1\xf1\xbc\xef\x0bPV\xaa\xdcnI\xa7\x0cyi\xf6\
+\xf9a\xa6\xd6&u\xad\xb0\xe4\x1066o\xa9,\x8a\
+\x88R\x90\xbcj\xbe\xda\xd3\xd2Xg\x98\xd1\xb7\x98\xc7\
+\xc2Z{.A\x06^\xeb\xdb\xd9\xb6\xb6o=x\xb0\
+Gd\xee\x83\xba\x0ep\xef\x03\xf8K|\x13]i\xe7\
+\xf36\x94\xec\x0f\xc5\xe6\xc9\xb3\x90\xbf\xca\xe7\xee\xceb\
+]\x8a}\xb9\xad\x9d\xd9\x1cl\xe9\xd2\x90|\x1dX\xbe\
+\x0a4\x9b\x07D'\x99\xd6\x96\x8a\x94\xbc\xc8M\x8bF\
+\x05\x88{\xc7\x84g\x10\xe3\x1a\xc8\xba\xa6\xe9i\xde9\
+\x0e%\x95\x86\xd0\x92\xb9a\xd2\xef\x05H\x08~\xc4\xa0\
+\xc01\x09\xa0\xa0\xac@\x9d\xf9\xc1M\xc7\x17\xba\x07\xad\
+\xb9b\xb2\xed=\x95\xbb\x9dj9o\xe9\x1c6O\x95\
+\xd3T\xf2q;[\xbe\xee5\xb3\x93\xe8\xf4j\xef\xc9\
+\x81v\xdb\xa8\xd0#\x07\xd1y\xbe\xd9\xdfnC;\x89\
+P\xa7\x89\xf3\xeb{\xc3\x94s\xe6\xcdV~\x0a\xa2\x11\
+\x11TTv\x00h\xa6\xccS\xde\x15\xbd1%\x90\xb4\
+\xe3\xeb\xf8#\x04\xb6\xf8\x7f8\xe3\x98h|\xc9Ct\
+\xf7:\xc8\xf9\x0e\xb0\x8a7|\x0a\x10\xab{\xd0gX\
+\xe9o\xd3\xd8\x80\xff3\x03\x85\x06\xcfNl=\x0e!\
+)\xf8\xc5\xdfK\xc2z9\xfeq\x06\xaa\xfd\x0c?\xd3\
+\x94Q\xdd\xc1\xf0;Nm\xb4Mr\xc5\xf5\x04\xba{\
+g\xb8\x93t\xd4[\xc0&\xa27\x9di\xca\x14\xb7\x96\
+e\x19\xa9A\x1fA\xf5J1\xef\x9a\xe8\xd9\x8b\xdd\xcd\
+\xeb\x04\x17\x9f\xeb\xa1\xea%-\x1fmx\xd7\xd8\xb2\x1c\
+s\x8a\xc0\xe8\x12\xd2II[uk\x93\xbb\x14W\x0d\
+\x8f,6T\x8e\x92\x96\x80Qv\x11\xa0n\x01z\xa1\
+}S\xf5|\x0d\x8dr\xa4\x00\xf8c\xac\x17~B\xf9\
+\xc1\xe1\xfd\xe1\xadm\xf1\x04.\xfe\xd4\x99\xf9\xef\x1cn\
+\xf9\xe7\xa28\xba\x5c+o\x0d*U\x09\x86\xed\xcf0\
+S\xdbI\xa9)\xb4\xb0\xe1\xb7\x9dpY\xcan\xefV\
+\x82Z!\xd6KgF{\xf3\x97\xd1>\x84\xa5r\xf4\
+\xe6{5n\x07_\x06}\x90\xbb\x93\xb2\x5c\x85\xaa\x5c\
+\x86\xa2\xd4\x92S\xf5\x8a\xe0\xe3\xde\x0d\xf4]\x02\xec[\
+\xea7\xe2\xde\xf91\xd5\x0a\xda\xce\x9a\xa4\xbf\xe8\x1b\xed\
+\xac\xeeF{\x96q\xa3=\xea\xb5\xda\xf7\xbc}\xb3\x97\
+\x0e\x01:\x95\x98+Z\xdcj\xb5\xef\xb96\xd7\xa6\xe0\
+\xca3\xf0\xe0e\xaf\xbd\xc8\x19\xd5\x1fs\x8e\xf3\xc1\xf9\
+\xe0?\x18\xea\x18\xcb\
+\x00\x00\x03\xb8\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Lay\
+outs\x0aimport \x22..\x22\
+ as AppTheme\x0a\x0aAp\
+pCard {\x0a    prop\
+erty string labe\
+l: \x22\x22\x0a    proper\
+ty string value:\
+ \x22\xe2\x80\x94\x22\x0a    prope\
+rty string detai\
+l: \x22\x22\x0a    implic\
+itHeight: 136\x0a  \
+  ColumnLayout {\
+\x0a        anchors\
+.fill: parent\x0a  \
+      anchors.ma\
+rgins: AppTheme.\
+Theme.space16\x0a  \
+      spacing: A\
+ppTheme.Theme.sp\
+ace8\x0a        Tex\
+t { text: label;\
+ color: AppTheme\
+.Theme.textSecon\
+dary; font.famil\
+y: AppTheme.Them\
+e.bodyFont; font\
+.pixelSize: AppT\
+heme.Theme.typeM\
+eta; font.weight\
+: AppTheme.Theme\
+.weightSemibold \
+}\x0a        Text {\
+ text: value; co\
+lor: AppTheme.Th\
+eme.textPrimary;\
+ font.family: Ap\
+pTheme.Theme.dis\
+playFont; font.p\
+ixelSize: AppThe\
+me.Theme.typeMet\
+ric; font.weight\
+: AppTheme.Theme\
+.weightBold; Lay\
+out.fillWidth: t\
+rue; elide: Text\
+.ElideRight }\x0a  \
+      Text { tex\
+t: detail; color\
+: AppTheme.Theme\
+.textMuted; font\
+.family: AppThem\
+e.Theme.utilityF\
+ont; font.pixelS\
+ize: AppTheme.Th\
+eme.typeMeta; La\
+yout.fillWidth: \
+true; elide: Tex\
+t.ElideRight }\x0a \
+   }\x0a}\x0a\
+\x00\x00\x08%\
+i\
+mport QtQuick\x0aim\
+port QtQuick.Con\
+trols\x0aimport \x22..\
+\x22 as AppTheme\x0a\x0aI\
+tem {\x0a    id: it\
+em\x0a    property \
+string label: \x22\x22\
+\x0a    property st\
+ring symbol: \x22\xe2\x80\
+\xa2\x22\x0a    property \
+bool selected: f\
+alse\x0a    propert\
+y bool compact: \
+false\x0a    signal\
+ activated()\x0a   \
+ implicitHeight:\
+ AppTheme.Theme.\
+primaryActionHei\
+ght\x0a    implicit\
+Width: compact ?\
+ 64 : 200\x0a    Ac\
+cessible.name: l\
+abel\x0a\x0a    Rectan\
+gle {\x0a        an\
+chors.fill: pare\
+nt\x0a        radiu\
+s: AppTheme.Them\
+e.radiusControl\x0a\
+        color: i\
+tem.selected ? A\
+ppTheme.Theme.su\
+rfaceRaised : Ap\
+pTheme.Theme.tra\
+nsparent\x0a       \
+ border.width: i\
+tem.selected ? A\
+ppTheme.Theme.bo\
+rderWidth : 0\x0a  \
+      border.col\
+or: item.selecte\
+d ? AppTheme.The\
+me.accent : AppT\
+heme.Theme.trans\
+parent\x0a        B\
+ehavior on color\
+ { ColorAnimatio\
+n { duration: Ap\
+pTheme.Theme.mot\
+ionStandard } }\x0a\
+    }\x0a    Rectan\
+gle { anchors.ve\
+rticalCenter: pa\
+rent.verticalCen\
+ter; x: AppTheme\
+.Theme.space8; w\
+idth: AppTheme.T\
+heme.space4; hei\
+ght: item.select\
+ed ? 20 : AppThe\
+me.Theme.space8;\
+ radius: width; \
+color: item.sele\
+cted ? AppTheme.\
+Theme.accent : A\
+ppTheme.Theme.bo\
+rder; Behavior o\
+n height { Numbe\
+rAnimation { dur\
+ation: AppTheme.\
+Theme.motionStan\
+dard } } }\x0a    T\
+ext { anchors.ve\
+rticalCenter: pa\
+rent.verticalCen\
+ter; x: AppTheme\
+.Theme.space20; \
+text: item.symbo\
+l; color: item.s\
+elected ? AppThe\
+me.Theme.accent \
+: AppTheme.Theme\
+.textSecondary; \
+font.pixelSize: \
+AppTheme.Theme.t\
+ypeCardTitle; fo\
+nt.family: AppTh\
+eme.Theme.bodyFo\
+nt }\x0a    Text { \
+anchors.vertical\
+Center: parent.v\
+erticalCenter; a\
+nchors.left: par\
+ent.left; anchor\
+s.leftMargin: 48\
+; anchors.right:\
+ parent.right; a\
+nchors.rightMarg\
+in: AppTheme.The\
+me.space8; visib\
+le: !item.compac\
+t; text: item.la\
+bel; color: item\
+.selected ? AppT\
+heme.Theme.textP\
+rimary : AppThem\
+e.Theme.textSeco\
+ndary; font.fami\
+ly: AppTheme.The\
+me.bodyFont; fon\
+t.pixelSize: App\
+Theme.Theme.type\
+Body; elide: Tex\
+t.ElideRight }\x0a \
+   MouseArea { a\
+nchors.fill: par\
+ent; cursorShape\
+: Qt.PointingHan\
+dCursor; onClick\
+ed: item.activat\
+ed() }\x0a    Keys.\
+onReturnPressed:\
+ item.activated(\
+)\x0a    Keys.onSpa\
+cePressed: item.\
+activated()\x0a    \
+focus: true\x0a    \
+ToolTip.visible:\
+ compact && cont\
+ainsMouse\x0a    To\
+olTip.text: labe\
+l\x0a}\x0a\
+\x00\x00\x02.\
+i\
+mport QtQuick\x0aim\
+port \x22..\x22 as App\
+Theme\x0a\x0aRectangle\
+ {\x0a    default p\
+roperty alias co\
+ntent: contentAr\
+ea.data\x0a    prop\
+erty bool raised\
+: false\x0a    colo\
+r: raised ? AppT\
+heme.Theme.surfa\
+ceRaised : AppTh\
+eme.Theme.surfac\
+e\x0a    radius: Ap\
+pTheme.Theme.rad\
+iusCard\x0a    bord\
+er.width: AppThe\
+me.Theme.borderW\
+idth\x0a    border.\
+color: AppTheme.\
+Theme.border\x0a   \
+ implicitWidth: \
+240\x0a    implicit\
+Height: 120\x0a\x0a   \
+ Behavior on col\
+or { ColorAnimat\
+ion { duration: \
+AppTheme.Theme.m\
+otionFast } }\x0a\x0a \
+   Item { id: co\
+ntentArea; ancho\
+rs.fill: parent;\
+ anchors.margins\
+: AppTheme.Theme\
+.space16 }\x0a}\x0a\
+"
+
+qt_resource_name = b"\
+\x00\x03\
+\x00\x00x<\
+\x00q\
+\x00m\x00l\
+\x00\x08\
+\x08\x01^\x5c\
+\x00M\
+\x00a\x00i\x00n\x00.\x00q\x00m\x00l\
+\x00\x0a\
+\x07j\x093\
+\x00c\
+\x00o\x00m\x00p\x00o\x00n\x00e\x00n\x00t\x00s\
+\x00\x09\
+\x0c8\xe5\xfc\
+\x00T\
+\x00h\x00e\x00m\x00e\x00.\x00q\x00m\x00l\
+\x00\x06\
+\x07\x84+\x02\
+\x00q\
+\x00m\x00l\x00d\x00i\x00r\
+\x00\x17\
+\x03\x8d\xc6\xfc\
+\x00C\
+\x00o\x00n\x00f\x00i\x00r\x00m\x00A\x00c\x00t\x00i\x00o\x00n\x00D\x00i\x00a\x00l\
+\x00o\x00g\x00.\x00q\x00m\x00l\
+\x00\x0d\
+\x0b\xc8p|\
+\x00A\
+\x00p\x00p\x00B\x00u\x00t\x00t\x00o\x00n\x00.\x00q\x00m\x00l\
+\x00\x0b\
+\x09\xca\xce\xbc\
+\x00I\
+\x00n\x00f\x00o\x00R\x00o\x00w\x00.\x00q\x00m\x00l\
+\x00\x0e\
+\x00S\x92|\
+\x00E\
+\x00m\x00p\x00t\x00y\x00S\x00t\x00a\x00t\x00e\x00.\x00q\x00m\x00l\
+\x00\x11\
+\x0fR\x91\x1c\
+\x00I\
+\x00n\x00l\x00i\x00n\x00e\x00M\x00e\x00s\x00s\x00a\x00g\x00e\x00.\x00q\x00m\x00l\
+\
+\x00\x0f\
+\x0b\xb1\xce|\
+\x00S\
+\x00t\x00a\x00t\x00u\x00s\x00B\x00a\x00d\x00g\x00e\x00.\x00q\x00m\x00l\
+\x00\x11\
+\x08\xe6l\x1c\
+\x00S\
+\x00e\x00c\x00t\x00i\x00o\x00n\x00H\x00e\x00a\x00d\x00e\x00r\x00.\x00q\x00m\x00l\
+\
+\x00\x0c\
+\x05!\xe7\xfc\
+\x00A\
+\x00p\x00p\x00S\x00h\x00e\x00l\x00l\x00.\x00q\x00m\x00l\
+\x00\x0e\
+\x01\xf6\xaf\xfc\
+\x00M\
+\x00e\x00t\x00r\x00i\x00c\x00C\x00a\x00r\x00d\x00.\x00q\x00m\x00l\
+\x00\x0f\
+\x0f\xd0A\xdc\
+\x00S\
+\x00i\x00d\x00e\x00b\x00a\x00r\x00I\x00t\x00e\x00m\x00.\x00q\x00m\x00l\
+\x00\x0b\
+\x08\x17\xc1\x1c\
+\x00A\
+\x00p\x00p\x00C\x00a\x00r\x00d\x00.\x00q\x00m\x00l\
+"
+
+qt_resource_struct = b"\
+\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x01\
+\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x02\
+\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00\x22\x00\x02\x00\x00\x00\x0b\x00\x00\x00\x06\
+\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00T\x00\x00\x00\x00\x00\x01\x00\x00\x04#\
+\x00\x00\x01\x9f\xedQm\xf1\
+\x00\x00\x00\x0c\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\
+\x00\x00\x01\x9f\xedQ{\x5c\
+\x00\x00\x00<\x00\x01\x00\x00\x00\x01\x00\x00\x01\x83\
+\x00\x00\x01\x9f\xedT\xaa\xad\
+\x00\x00\x00\xd6\x00\x00\x00\x00\x00\x01\x00\x00\x12\x89\
+\x00\x00\x01\x9f\xedT\xbeZ\
+\x00\x00\x01\x8a\x00\x00\x00\x00\x00\x01\x00\x00%\x95\
+\x00\x00\x01\x9f\xedQ\x94\x81\
+\x00\x00\x00f\x00\x00\x00\x00\x00\x01\x00\x00\x04V\
+\x00\x00\x01\x9f\xedT\xcbY\
+\x00\x00\x01l\x00\x01\x00\x00\x00\x01\x00\x00\x1f\xca\
+\x00\x00\x01\x9f\xedST6\
+\x00\x00\x01\xd0\x00\x00\x00\x00\x00\x01\x00\x001z\
+\x00\x00\x01\x9f\xedQ\x86\x9b\
+\x00\x00\x01D\x00\x00\x00\x00\x00\x01\x00\x00\x1c\x10\
+\x00\x00\x01\x9f\xedT\xb7\x98\
+\x00\x00\x00\xba\x00\x00\x00\x00\x00\x01\x00\x00\x0f\xe5\
+\x00\x00\x01\x9f\xedT\xc4\xb6\
+\x00\x00\x01 \x00\x00\x00\x00\x00\x01\x00\x00\x18\xf4\
+\x00\x00\x01\x9f\xedQ\x9bW\
+\x00\x00\x00\x9a\x00\x00\x00\x00\x00\x01\x00\x00\x09y\
+\x00\x00\x01\x9f\xedQ\x8d=\
+\x00\x00\x00\xf8\x00\x00\x00\x00\x00\x01\x00\x00\x15\xf3\
+\x00\x00\x01\x9f\xedQ\xb9V\
+\x00\x00\x01\xac\x00\x00\x00\x00\x00\x01\x00\x00)Q\
+\x00\x00\x01\x9f\xedT\xb0\xff\
+"
+
+def qInitResources():
+    QtCore.qRegisterResourceData(0x03, qt_resource_struct, qt_resource_name, qt_resource_data)
+
+def qCleanupResources():
+    QtCore.qUnregisterResourceData(0x03, qt_resource_struct, qt_resource_name, qt_resource_data)
+
+qInitResources()
