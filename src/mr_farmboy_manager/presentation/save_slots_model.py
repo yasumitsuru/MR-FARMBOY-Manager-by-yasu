@@ -57,6 +57,7 @@ class SaveSlotsModel(QAbstractListModel):
             return
         self._selected_id = slot_id
         rows = list(self._rows)
+        changed_rows: list[int] = []
         for row, values in enumerate(rows):
             is_selected = values[self.SlotIdRole] == slot_id
             if values[self.SelectedRole] == is_selected:
@@ -64,8 +65,11 @@ class SaveSlotsModel(QAbstractListModel):
             updated = dict(values)
             updated[self.SelectedRole] = is_selected
             rows[row] = updated
-            self.dataChanged.emit(self.index(row, 0), self.index(row, 0), [self.SelectedRole])
+            changed_rows.append(row)
+
         self._rows = tuple(rows)
+        for row in changed_rows:
+            self.dataChanged.emit(self.index(row, 0), self.index(row, 0), [self.SelectedRole])
 
     def _row_for(self, summary: SaveSlotSummary) -> dict[int, object]:
         slot = summary.slot

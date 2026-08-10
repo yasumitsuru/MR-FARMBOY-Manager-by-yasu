@@ -27,7 +27,7 @@ def test_save_model_exposes_stable_roles(tmp_path: Path) -> None:
 
 
 def test_save_model_notifies_only_rows_with_changed_selection(tmp_path: Path) -> None:
-    """Detecta atualizações QML desnecessárias ou ausência da linha anterior."""
+    """Detecta valor obsoleto de seleção durante a notificação QML."""
     model = SaveSlotsModel()
     model.replace(
         (
@@ -35,13 +35,20 @@ def test_save_model_notifies_only_rows_with_changed_selection(tmp_path: Path) ->
             SaveSlotSummary(SaveSlot(2, tmp_path / "save_2"), 2),
         )
     )
-    changed: list[int] = []
-    model.dataChanged.connect(lambda first, _last, _roles: changed.append(first.row()))
+    changed: list[tuple[int, object]] = []
+    model.dataChanged.connect(
+        lambda first, _last, _roles: changed.append(
+            (
+                first.row(),
+                model.data(first, SaveSlotsModel.SelectedRole),
+            )
+        )
+    )
 
     model.set_selected("save_1")
     model.set_selected("save_2")
 
-    assert changed == [0, 0, 1]
+    assert changed == [(0, True), (0, False), (1, True)]
 
 
 def test_models_replace_with_empty_data(tmp_path: Path) -> None:
@@ -72,6 +79,47 @@ def test_backup_model_preserves_discovery_order_and_formats_labels(tmp_path: Pat
     assert model.data(first, BackupsModel.SizeLabelRole) == "4,0 KiB"
     assert model.data(first, BackupsModel.IntegrityLabelRole) == "Íntegro"
     assert model.data(second, BackupsModel.SizeLabelRole) == "512 B"
+
+
+def test_backup_model_notifies_changed_rows_after_selection_is_updated(
+    tmp_path: Path,
+) -> None:
+    """Detecta seleção de backup obsoleta durante o sinal para o QML."""
+    model = BackupsModel()
+    model.replace(
+        (
+            BackupRecord(
+                "save_1-first",
+                1,
+                datetime(2026, 8, 8, 10, 30, tzinfo=UTC),
+                tmp_path / "save_1-first",
+                1,
+                512,
+            ),
+            BackupRecord(
+                "save_2-second",
+                2,
+                datetime(2026, 8, 8, 15, 30, tzinfo=UTC),
+                tmp_path / "save_2-second",
+                2,
+                4096,
+            ),
+        )
+    )
+    changed: list[tuple[int, object]] = []
+    model.dataChanged.connect(
+        lambda first, _last, _roles: changed.append(
+            (
+                first.row(),
+                model.data(first, BackupsModel.SelectedRole),
+            )
+        )
+    )
+
+    model.set_selected("save_1-first")
+    model.set_selected("save_2-second")
+
+    assert changed == [(0, True), (0, False), (1, True)]
 
 
 def test_growth_model_calculates_ratios_and_handles_zero_total() -> None:
