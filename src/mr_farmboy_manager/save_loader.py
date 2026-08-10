@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NamedTuple
 
+from .save_snapshot import MAX_SAVE_FILE_SIZE_BYTES, SaveFileSizeLimitError, read_limited_file
+
 
 class SaveLoadResult(NamedTuple):
     """Resultado da tentativa de carregar um save."""
@@ -20,7 +22,9 @@ class SaveLoadResult(NamedTuple):
     data: bytes | None = None
 
 
-def load_save(save_path: str | Path) -> SaveLoadResult:
+def load_save(
+    save_path: str | Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES
+) -> SaveLoadResult:
     """Carrega o arquivo de save em modo binário (apenas leitura).
 
     Este método lê o conteúdo do arquivo de save sem modificar o original.
@@ -51,22 +55,20 @@ def load_save(save_path: str | Path) -> SaveLoadResult:
         )
 
     try:
-        # Lê o arquivo exclusivamente em modo binário (apenas leitura)
-        with open(abs_path, "rb") as f:
-            data = f.read()
-            size = len(data)
+        data = read_limited_file(abs_path, max_size_bytes=max_size_bytes)
+        size = len(data)
 
-            # Validação de tamanho mínimo
-            if size < 1:
-                raise ValueError("O arquivo está vazio ou menor que o tamanho mínimo esperado (>= 1 byte).")
+        # Validação de tamanho mínimo
+        if size < 1:
+            raise ValueError("O arquivo está vazio ou menor que o tamanho mínimo esperado (>= 1 byte).")
 
-            return SaveLoadResult(
-                path=abs_path,
-                success=True,
-                error_message=None,
-                size_bytes=size,
-                data=data
-            )
+        return SaveLoadResult(
+            path=abs_path,
+            success=True,
+            error_message=None,
+            size_bytes=size,
+            data=data
+        )
 
     except FileNotFoundError:
         return SaveLoadResult(
@@ -80,6 +82,13 @@ def load_save(save_path: str | Path) -> SaveLoadResult:
             path=abs_path,
             success=False,
             error_message="Sem permissoes para ler o arquivo."
+        )
+
+    except SaveFileSizeLimitError:
+        return SaveLoadResult(
+            path=abs_path,
+            success=False,
+            error_message="Arquivo acima do limite de leitura."
         )
 
     except ValueError as e:

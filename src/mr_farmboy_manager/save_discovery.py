@@ -16,7 +16,12 @@ from pathlib import Path
 from typing import Optional
 
 from .godot_tres import is_godot_tres_text, parse_godot_tres_structure
-from .save_snapshot import create_save_snapshot
+from .save_snapshot import (
+    MAX_SAVE_FILE_SIZE_BYTES,
+    SaveFileSizeLimitError,
+    create_save_snapshot,
+    read_limited_file,
+)
 
 
 class SavedFormat(Enum):
@@ -68,7 +73,8 @@ class SaveDiscoveryResult:
 MAX_ZIP_ENTRIES = 1000
 MAX_DECOMPRESSED_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 MAX_ENTRY_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB por entrada
-MAX_INPUT_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB de entrada
+# Alias público histórico. O teto canônico pertence à fronteira de leitura.
+MAX_INPUT_SIZE_BYTES = MAX_SAVE_FILE_SIZE_BYTES
 
 
 def _estimate_textual_ratio(content: str) -> float:
@@ -282,6 +288,18 @@ def _discover_format(data: bytes) -> SavedFormat:
 
 
 def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
+    """Descobre a estrutura, convertendo o teto da fronteira em erro sanitizado."""
+    try:
+        return _discover_save_structure(save_path)
+    except SaveFileSizeLimitError:
+        return SaveDiscoveryResult(
+            success=False,
+            detected_format=SavedFormat.UNKNOWN,
+            error_message="Arquivo acima do limite de inspeção",
+        )
+
+
+def _discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
     """Descobre a estrutura sanitizada de um save local sem modificá-lo.
 
     Args:
@@ -317,7 +335,25 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
             file_extension=path.suffix.lower() or None, is_empty=True
         )
 
-    with create_save_snapshot(save_path) as snapshot_info:
+    # Rejeita antes da cópia do snapshot; o alias preserva monkeypatches e
+    # imports legados deste módulo.
+    if initial_size > MAX_INPUT_SIZE_BYTES:
+        return SaveDiscoveryResult(
+            success=False, detected_format=SavedFormat.UNKNOWN,
+            error_message="Arquivo acima do limite de inspeção"
+        )
+
+    try:
+        # Mantém a chamada legada de um argumento para wrappers de consumidores;
+        # o default do snapshot é o mesmo teto público de 100 MiB.
+        snapshot_context = create_save_snapshot(save_path)
+    except SaveFileSizeLimitError:
+        return SaveDiscoveryResult(
+            success=False, detected_format=SavedFormat.UNKNOWN,
+            error_message="Arquivo acima do limite de inspeção"
+        )
+
+    with snapshot_context as snapshot_info:
         snapshot_path = snapshot_info.snapshot_path
 
         try:
@@ -329,21 +365,17 @@ def discover_save_structure(save_path: str | Path) -> SaveDiscoveryResult:
                     error_message="Arquivo acima do limite de inspeção"
                 )
 
-            # Leitura limitada - nunca f.read() sem argumento
-            with open(snapshot_path, 'rb') as f:
-                data = f.read(MAX_INPUT_SIZE_BYTES + 1)
-
-            # Defesa contra crescimento do arquivo entre stat e leitura
-            if len(data) > MAX_INPUT_SIZE_BYTES:
-                return SaveDiscoveryResult(
-                    success=False, detected_format=SavedFormat.UNKNOWN,
-                    error_message="Arquivo acima do limite de inspeção"
-                )
+            data = read_limited_file(snapshot_path, max_size_bytes=MAX_INPUT_SIZE_BYTES)
 
         except PermissionError:
             return SaveDiscoveryResult(
                 success=False, detected_format=SavedFormat.UNKNOWN,
                 error_message="Sem permissao para ler o arquivo"
+            )
+        except SaveFileSizeLimitError:
+            return SaveDiscoveryResult(
+                success=False, detected_format=SavedFormat.UNKNOWN,
+                error_message="Arquivo acima do limite de inspeção"
             )
         except OSError as e:
             return SaveDiscoveryResult(

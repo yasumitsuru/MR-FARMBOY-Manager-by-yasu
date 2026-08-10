@@ -15,6 +15,76 @@ from pathlib import Path
 from typing import Iterator
 
 
+# Limite público para qualquer leitura/cópia de save externo.  Este valor é
+# deliberadamente distinto do limite de 8 MiB de ``save_details``.
+MAX_SAVE_FILE_SIZE_BYTES = 100 * 1024 * 1024
+_READ_BLOCK_SIZE_BYTES = 64 * 1024
+
+
+class SaveFileSizeLimitError(ValueError):
+    """O save ultrapassou o teto seguro de leitura."""
+
+    def __init__(self) -> None:
+        super().__init__("Arquivo acima do limite de leitura.")
+
+
+def _check_size_limit(path: Path, max_size_bytes: int) -> int:
+    """Retorna o tamanho atual ou falha antes de uma leitura não limitada."""
+    size = path.stat().st_size
+    if size > max_size_bytes:
+        raise SaveFileSizeLimitError()
+    return size
+
+
+def read_limited_file(path: str | Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES) -> bytes:
+    """Lê um arquivo em blocos, sem materializar mais que ``max_size_bytes``.
+
+    O tamanho é conferido antes, entre blocos e ao término, para detectar
+    crescimento concorrente sem recorrer a ``read()`` sem limite.
+    """
+    file_path = Path(path)
+    _check_size_limit(file_path, max_size_bytes)
+    chunks: list[bytes] = []
+    total_size = 0
+
+    with open(file_path, "rb") as source:
+        while total_size < max_size_bytes:
+            block = source.read(min(_READ_BLOCK_SIZE_BYTES, max_size_bytes - total_size))
+            if not block:
+                break
+            chunks.append(block)
+            total_size += len(block)
+            _check_size_limit(file_path, max_size_bytes)
+
+    _check_size_limit(file_path, max_size_bytes)
+    return b"".join(chunks)
+
+
+def _copy_limited_file(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    max_size_bytes: int,
+) -> tuple[int, str]:
+    """Copia e calcula o hash do save respeitando o limite em cada bloco."""
+    _check_size_limit(source_path, max_size_bytes)
+    source_hash = hashlib.sha256()
+    total_size = 0
+
+    with open(source_path, "rb") as source, open(destination_path, "wb") as destination:
+        while total_size < max_size_bytes:
+            block = source.read(min(_READ_BLOCK_SIZE_BYTES, max_size_bytes - total_size))
+            if not block:
+                break
+            destination.write(block)
+            source_hash.update(block)
+            total_size += len(block)
+            _check_size_limit(source_path, max_size_bytes)
+
+    _check_size_limit(source_path, max_size_bytes)
+    return total_size, source_hash.hexdigest()
+
+
 @dataclass(frozen=True)
 class SnapshotResult:
     """Resultado da criação de snapshot."""
@@ -26,7 +96,9 @@ class SnapshotResult:
     snapshot_sha256: str
 
 
-def _calculate_sha256_blocks(filepath: Path) -> str:
+def _calculate_sha256_blocks(
+    filepath: Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES
+) -> str:
     """Calcula o hash SHA-256 de um arquivo lendo em blocos.
 
     Não carrega o arquivo inteiro em memória, calculando o hash em
@@ -40,17 +112,27 @@ def _calculate_sha256_blocks(filepath: Path) -> str:
         String hexadecimal com o hash SHA-256 (64 caracteres).
     """
     sha256_hash = hashlib.sha256()
-    block_size = 65536  # 64 KB por bloco
+    _check_size_limit(filepath, max_size_bytes)
 
     with open(filepath, "rb") as f:
-        for block in iter(lambda: f.read(block_size), b""):
+        total_size = 0
+        while total_size < max_size_bytes:
+            block = f.read(min(_READ_BLOCK_SIZE_BYTES, max_size_bytes - total_size))
+            if not block:
+                break
             sha256_hash.update(block)
+            total_size += len(block)
+            _check_size_limit(filepath, max_size_bytes)
+
+    _check_size_limit(filepath, max_size_bytes)
 
     return sha256_hash.hexdigest()
 
 
 @contextmanager
-def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
+def create_save_snapshot(
+    original_path: str | Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES
+) -> Iterator[SnapshotResult]:
     """Cria um snapshot seguro do arquivo original.
 
     Este context manager cria uma cópia temporária do arquivo em uma pasta
@@ -89,19 +171,14 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         if path.is_dir():
             raise FileNotFoundError(f"Caminho aponta para um diretório, não para um arquivo: {path}")
 
-        # Tenta ler o arquivo - FileNotFoundError para inexistentes
-        original_data = path.read_bytes()
+        original_size_bytes_before = _check_size_limit(path, max_size_bytes)
 
         # Validação de tamanho mínimo
-        if len(original_data) < 1:
+        if original_size_bytes_before < 1:
             raise ValueError("Arquivo vazio.")
 
-        original_size_bytes_before = len(original_data)
         original_stat_info = path.stat()
         original_mtime_ns_before = original_stat_info.st_mtime_ns
-
-        # Calcula hash do original (em blocos para arquivos grandes)
-        original_hash = _calculate_sha256_blocks(path)
 
     except FileNotFoundError:
         raise FileNotFoundError(f"Caminho não aponta para um arquivo válido: {path}")
@@ -116,15 +193,17 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
         snapshot_path = Path(temp_dir) / path.name
         snapshot_path_str = str(snapshot_path.resolve())
 
-        # Copia o arquivo com metadados preservados (shutil.copy2)
-        shutil.copy2(path, snapshot_path)
+        # Copia incrementalmente: jamais cria um snapshot acima do teto.
+        copied_size, original_hash = _copy_limited_file(
+            path, snapshot_path, max_size_bytes=max_size_bytes
+        )
 
         # Obtém tamanho usando stat em vez de read_bytes
         snapshot_stat = snapshot_path.stat()
         snapshot_size = snapshot_stat.st_size
 
         # Verifica se o tamanho permanece inalterado
-        if snapshot_size != original_size_bytes_before:
+        if snapshot_size != original_size_bytes_before or copied_size != original_size_bytes_before:
             raise ValueError("Integridade comprometida: tamanho do arquivo alterado durante a cópia.")
 
         # Verifica se o mtime (tempo de modificação) permanece inalterado
@@ -134,7 +213,7 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
             raise ValueError("Integridade comprometida: tempo de modificação do arquivo alterado.")
 
         # Calcula hash da cópia (em blocos para arquivos grandes)
-        snapshot_hash = _calculate_sha256_blocks(snapshot_path)
+        snapshot_hash = _calculate_sha256_blocks(snapshot_path, max_size_bytes=max_size_bytes)
 
         # Verifica integridade dos hashes (original antes e snapshot depois devem ser idênticos)
         if original_hash != snapshot_hash:
@@ -159,7 +238,7 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
             if size_after_yield != original_size_bytes_before:
                 raise ValueError("Integridade comprometida: tamanho do arquivo original foi alterado após snapshot.")
 
-            current_original_hash = _calculate_sha256_blocks(path)
+            current_original_hash = _calculate_sha256_blocks(path, max_size_bytes=max_size_bytes)
             if current_original_hash != original_hash:
                 raise ValueError("Integridade comprometida: conteúdo do arquivo original foi alterado após snapshot.")
 
@@ -169,6 +248,9 @@ def create_save_snapshot(original_path: str | Path) -> Iterator[SnapshotResult]:
 
         except FileNotFoundError:
             raise FileNotFoundError(f"Arquivo desapareceu durante a operação: {path}")
+
+    except PermissionError as error:
+        raise PermissionError("Sem permissão para criar ou ler o snapshot.") from error
 
     finally:
         # Remove a pasta temporária em TODOS os caminhos de saída (sucesso ou erro),

@@ -204,8 +204,7 @@ class TestFileValidation:
         assert result.error_message == "Diretório, não arquivo"
 
     def test_input_size_limit_enforced(self, tmp_path, monkeypatch):
-        """Teste que arquivo acima do limite de inspeção é rejeitado com mensagem sanitizada."""
-        import contextlib
+        """Teste que arquivo acima do limite é rejeitado antes de criar snapshot."""
         import mr_farmboy_manager.save_discovery as sd_module
 
         # Reduz o limite temporariamente para um valor pequeno
@@ -215,17 +214,10 @@ class TestFileValidation:
         save_file = tmp_path / "big_save.dat"
         save_file.write_bytes(content)
 
-        # Registra o caminho do snapshot para verificar remoção após a inspeção
-        recorded = {}
-        real_create = sd_module.create_save_snapshot
+        def snapshot_must_not_run(*args, **kwargs):
+            raise AssertionError("snapshot não deve ser criado para entrada acima do limite")
 
-        @contextlib.contextmanager
-        def recording_create(path):
-            with real_create(path) as info:
-                recorded['snapshot_path'] = info.snapshot_path
-                yield info
-
-        monkeypatch.setattr(sd_module, 'create_save_snapshot', recording_create)
+        monkeypatch.setattr(sd_module, 'create_save_snapshot', snapshot_must_not_run)
 
         result = discover_save_structure(str(save_file))
 
@@ -235,10 +227,6 @@ class TestFileValidation:
         # Arquivo original preservado e inalterado
         assert save_file.exists()
         assert save_file.read_bytes() == content
-        # Snapshot criado e depois removido
-        assert recorded.get('snapshot_path'), "Snapshot deveria ter sido criado antes da rejeição"
-        assert Path(recorded['snapshot_path']).exists() is False, \
-            "Snapshot deve ser removido após a inspeção"
 
 
 class TestSanitization:

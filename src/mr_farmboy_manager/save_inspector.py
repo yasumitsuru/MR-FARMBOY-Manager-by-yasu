@@ -14,6 +14,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
+from .save_snapshot import MAX_SAVE_FILE_SIZE_BYTES, SaveFileSizeLimitError, read_limited_file
+
 
 class DetectedFormat(Enum):
     """Formatos detectados no arquivo."""
@@ -202,7 +204,9 @@ def _detect_format(data: bytes, extension: Optional[str]) -> DetectedFormat:
     return DetectedFormat.BINARY_UNKNOWN
 
 
-def inspect_save(path: str | Path) -> SaveInspectionResult:
+def inspect_save(
+    path: str | Path, *, max_size_bytes: int = MAX_SAVE_FILE_SIZE_BYTES
+) -> SaveInspectionResult:
     """Inspeciona o arquivo e retorna metadados estruturados.
 
     Esta função opera sobre um arquivo fornecido e retorna informações
@@ -226,14 +230,21 @@ def inspect_save(path: str | Path) -> SaveInspectionResult:
         )
 
     try:
-        # Lê o conteúdo do arquivo (em modo binário)
-        data = file_path.read_bytes()
+        # Leitura limitada em blocos: nunca materializa conteúdo acima do teto.
+        data = read_limited_file(file_path, max_size_bytes=max_size_bytes)
     except PermissionError:
         return SaveInspectionResult(
             readable_file=False,
             detected_format=DetectedFormat.UNKNOWN,
             inspection_success=False,
             error_message="Sem permissão para ler o arquivo"
+        )
+    except SaveFileSizeLimitError:
+        return SaveInspectionResult(
+            readable_file=False,
+            detected_format=DetectedFormat.UNKNOWN,
+            inspection_success=False,
+            error_message="Arquivo acima do limite de leitura."
         )
     except IOError as e:
         return SaveInspectionResult(
@@ -310,11 +321,8 @@ def verify_file_integrity(original_path: str | Path, snapshot_path: str | Path) 
         True se os hashes forem idênticos, False caso contrário.
     """
     try:
-        with open(original_path, 'rb') as f:
-            original_hash = hashlib.sha256(f.read()).hexdigest()
-
-        with open(snapshot_path, 'rb') as f:
-            snapshot_hash = hashlib.sha256(f.read()).hexdigest()
+        original_hash = calculate_file_hash(original_path)
+        snapshot_hash = calculate_file_hash(snapshot_path)
 
         return original_hash == snapshot_hash
     except Exception:

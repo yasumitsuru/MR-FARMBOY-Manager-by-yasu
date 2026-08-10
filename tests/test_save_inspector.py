@@ -34,6 +34,17 @@ class TestInspectSave:
         assert result.detected_format == DetectedFormat.JSON_TEXTUAL
         assert result.total_size_bytes == len(json.dumps(json_content).encode('utf-8'))
 
+    def test_inspection_rejects_file_above_injected_limit(self, tmp_path: Path) -> None:
+        """Inspection must reject oversized input without exposing its path or data."""
+        save_file = tmp_path / "private-too-large.bin"
+        save_file.write_bytes(b"123456789")
+
+        result = inspect_save(save_file, max_size_bytes=8)
+
+        assert result.inspection_success is False
+        assert result.readable_file is False
+        assert result.error_message == "Arquivo acima do limite de leitura."
+
     def test_json_large(self, tmp_path: Path) -> None:
         """Verifica detecção de JSON com mais de 1000 caracteres."""
         json_file = tmp_path / "large.json"
@@ -177,7 +188,10 @@ No structured formatting here."""
         original_data = b'test data'
         original_file.write_bytes(original_data)
 
-        with patch.object(Path, 'read_bytes', side_effect=PermissionError("Access denied")):
+        with patch(
+            'mr_farmboy_manager.save_inspector.read_limited_file',
+            side_effect=PermissionError("Access denied"),
+        ):
             result = inspect_save(original_file)
             assert result.readable_file is False
             assert result.inspection_success is False

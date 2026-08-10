@@ -26,6 +26,36 @@ class TestCreateSaveSnapshot:
             assert isinstance(result, SnapshotResult)
             assert not str(result.snapshot_path).startswith(str(tmp_path))
 
+    def test_rejects_file_above_injected_limit_before_creating_snapshot(self, tmp_path: Path) -> None:
+        """The source-size boundary must run before any temporary copy is made."""
+        original_file = tmp_path / "too_large.bin"
+        original_file.write_bytes(b"123456789")
+
+        with pytest.raises(ValueError, match="limite de leitura"):
+            with create_save_snapshot(original_file, max_size_bytes=8):
+                pass
+
+    def test_rejects_source_that_grows_during_limited_copy(self, tmp_path: Path, monkeypatch) -> None:
+        """A source growing between chunks must abort before copying beyond the limit."""
+        original_file = tmp_path / "growing.bin"
+        original_file.write_bytes(b"1234")
+        real_stat = Path.stat
+        source_stat_calls = 0
+
+        def grow_after_first_chunk(path: Path, *args, **kwargs):
+            nonlocal source_stat_calls
+            if path == original_file:
+                source_stat_calls += 1
+                if source_stat_calls == 5:
+                    original_file.write_bytes(b"123456789")
+            return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", grow_after_first_chunk)
+
+        with pytest.raises(ValueError, match="limite de leitura"):
+            with create_save_snapshot(original_file, max_size_bytes=8):
+                pass
+
     def test_content_identical_to_original(self, tmp_path: Path) -> None:
         original_file = tmp_path / 'original.bin'
         original_data = b'test content with specific data'
@@ -128,7 +158,10 @@ class TestCreateSaveSnapshot:
         original_file = tmp_path / 'protected.bin'
         original_file.write_bytes(b'test data')
 
-        with patch.object(Path, 'read_bytes', side_effect=PermissionError("Access denied")):
+        with patch(
+            'mr_farmboy_manager.save_snapshot._copy_limited_file',
+            side_effect=PermissionError("Access denied"),
+        ):
             with pytest.raises(PermissionError, match="Sem permissão"):
                 with create_save_snapshot(original_file):
                     pass
@@ -253,8 +286,8 @@ class TestCreateSaveSnapshot:
         assert snapshot_dir.exists() is False, \
             f"Diretório temporário do snapshot deve ser removido: {snapshot_dir}"
 
-    def test_cleanup_on_shutil_copy2_failure(self, tmp_path: Path) -> None:
-        """Verifica que a limpeza ocorre quando shutil.copy2 falha."""
+    def test_cleanup_on_limited_copy_failure(self, tmp_path: Path) -> None:
+        """Verifica que a limpeza ocorre quando a cópia limitada falha."""
         from unittest.mock import patch, MagicMock
 
         original_file = tmp_path / 'original.bin'
@@ -265,7 +298,10 @@ class TestCreateSaveSnapshot:
         temp_dir_created: str | None = None
 
         try:
-            with patch('mr_farmboy_manager.save_snapshot.shutil.copy2', side_effect=PermissionError("Copy denied")) as mock_copy:
+            with patch(
+                'mr_farmboy_manager.save_snapshot._copy_limited_file',
+                side_effect=PermissionError("Copy denied"),
+            ):
                 with create_save_snapshot(original_file) as result:
                     captured_snapshot_path = result.snapshot_path
                     temp_dir_created = Path(result.snapshot_path).parent
@@ -309,7 +345,10 @@ class TestCreateSaveSnapshot:
         original_data = b'test data'
         original_file.write_bytes(original_data)
 
-        with patch.object(Path, 'read_bytes', side_effect=OSError("IO error occurred")):
+        with patch(
+            'mr_farmboy_manager.save_snapshot._copy_limited_file',
+            side_effect=OSError("IO error occurred"),
+        ):
             # OSError não é convertido em PermissionError - deve ser propagado como-is
             with pytest.raises(OSError, match="IO error"):
                 with create_save_snapshot(original_file):

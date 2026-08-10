@@ -29,6 +29,18 @@ class TestLoadSave:
         assert result.data == test_data
         assert result.error_message is None
 
+    def test_load_rejects_file_above_injected_limit_without_data(self, tmp_path: Path) -> None:
+        """The legacy loader must not return materialized data above its boundary."""
+        test_file = tmp_path / "too_large.bin"
+        test_file.write_bytes(b"123456789")
+
+        result = load_save(test_file, max_size_bytes=8)
+
+        assert result.success is False
+        assert result.data is None
+        assert result.size_bytes is None
+        assert result.error_message == "Arquivo acima do limite de leitura."
+
     def test_load_arquivo_invalido_retorna_success_false(self, tmp_path: Path) -> None:
         """Verifies that invalid path returns success=False."""
         # Caminho inexistente
