@@ -14,7 +14,15 @@ Dialog {
     modal: true
     focus: true
     title: confirmationTitle
+    width: 420
     standardButtons: Dialog.NoButton
+    function openConfirmation(actionValue, backupIdValue, titleValue, messageValue) {
+        action = actionValue
+        backupId = backupIdValue
+        confirmationTitle = titleValue
+        confirmationMessage = messageValue
+        open()
+    }
     background: Rectangle { color: AppTheme.Theme.surface; radius: AppTheme.Theme.radiusPanel; border.width: AppTheme.Theme.borderWidth; border.color: AppTheme.Theme.border }
     contentItem: ColumnLayout {
         spacing: AppTheme.Theme.space16
@@ -22,8 +30,8 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            AppButton { text: "Cancelar"; onClicked: { dialog.cancelled(); dialog.close() } }
-            AppButton { text: "Confirmar"; variant: dialog.action === "delete" ? "danger" : "primary"; onClicked: { dialog.confirmed(dialog.action, dialog.backupId); dialog.close() } }
+            AppButton { objectName: "confirmDialogCancelButton"; text: "Cancelar"; onClicked: { dialog.cancelled(); dialog.close() } }
+            AppButton { objectName: "confirmDialogConfirmButton"; text: "Confirmar"; variant: dialog.action === "delete" ? "danger" : "primary"; onClicked: { dialog.confirmed(dialog.action, dialog.backupId); dialog.close() } }
         }
     }
 }

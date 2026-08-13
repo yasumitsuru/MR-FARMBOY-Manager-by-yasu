@@ -6,6 +6,7 @@ import "../pages"
 
 Item {
     id: shell
+    objectName: "appShell"
     property var controller
     property int currentIndex: 0
     readonly property bool wideNavigation: width >= 1200
@@ -13,6 +14,7 @@ Item {
     readonly property bool drawerNavigation: width < 1000
     readonly property var pageTitles: ["Visão do cultivo", "Saves", "Backups", "Configurações", "Diagnósticos"]
     readonly property var pageSymbols: ["◉", "▤", "▣", "⚙", "⌁"]
+    readonly property bool backupDialogVisible: backupConfirmDialog.visible
 
     function navigate(index) {
         currentIndex = index
@@ -89,10 +91,26 @@ Item {
                 currentIndex: shell.currentIndex
                 DashboardPage { controller: shell.controller; shell: shell }
                 SavesPage { controller: shell.controller; shell: shell }
-                Item { Accessible.name: shell.pageTitles[2] }
+                BackupsPage { controller: shell.controller; shell: shell }
                 Item { Accessible.name: shell.pageTitles[3] }
                 Item { Accessible.name: shell.pageTitles[4] }
             }
+        }
+    }
+
+    ConfirmActionDialog {
+        id: backupConfirmDialog
+        objectName: "backupConfirmDialog"
+        parent: shell
+        anchors.centerIn: parent
+        onConfirmed: if (shell.controller && shell.controller.backups) shell.controller.backups.confirmAction(action, backupId)
+        onCancelled: if (shell.controller && shell.controller.backups) shell.controller.backups.cancelConfirmation()
+    }
+
+    Connections {
+        target: shell.controller && shell.controller.backups ? shell.controller.backups : null
+        function onConfirmationRequested(action, backupId, title, message) {
+            backupConfirmDialog.openConfirmation(action, backupId, title, message)
         }
     }
 

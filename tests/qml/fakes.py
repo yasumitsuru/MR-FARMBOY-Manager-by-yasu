@@ -235,6 +235,172 @@ class FakeSavesViewModel(QObject):
     details = Property(QObject, lambda self: self._details, constant=True)
 
 
+class FakeBackupsModel(QAbstractListModel):
+    """Lista de backups com as mesmas roles públicas do modelo de produção."""
+
+    BackupIdRole = Qt.ItemDataRole.UserRole + 1
+    SlotIdRole = Qt.ItemDataRole.UserRole + 2
+    SlotLabelRole = Qt.ItemDataRole.UserRole + 3
+    CreatedAtLabelRole = Qt.ItemDataRole.UserRole + 4
+    SizeLabelRole = Qt.ItemDataRole.UserRole + 5
+    IntegrityLabelRole = Qt.ItemDataRole.UserRole + 6
+    SelectedRole = Qt.ItemDataRole.UserRole + 7
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._rows: list[dict[int, object]] = []
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> object:
+        if not index.isValid() or not 0 <= index.row() < len(self._rows):
+            return None
+        return self._rows[index.row()].get(role)
+
+    def roleNames(self) -> dict[int, bytes]:
+        return {
+            self.BackupIdRole: b"backupId",
+            self.SlotIdRole: b"slotId",
+            self.SlotLabelRole: b"slotLabel",
+            self.CreatedAtLabelRole: b"createdAtLabel",
+            self.SizeLabelRole: b"sizeLabel",
+            self.IntegrityLabelRole: b"integrityLabel",
+            self.SelectedRole: b"selected",
+        }
+
+    def replace_fixture(self, backup_ids: tuple[str, ...], selected_id: str = "") -> None:
+        self.beginResetModel()
+        self._rows = [
+            {
+                self.BackupIdRole: backup_id,
+                self.SlotIdRole: "save_1",
+                self.SlotLabelRole: "Slot 1",
+                self.CreatedAtLabelRole: "10/08/2026 14:30",
+                self.SizeLabelRole: "2,4 MB",
+                self.IntegrityLabelRole: "Íntegro",
+                self.SelectedRole: backup_id == selected_id,
+            }
+            for backup_id in backup_ids
+        ]
+        self.endResetModel()
+
+    def set_selected(self, backup_id: str) -> None:
+        for row, values in enumerate(self._rows):
+            selected = values[self.BackupIdRole] == backup_id
+            if values[self.SelectedRole] != selected:
+                values[self.SelectedRole] = selected
+                self.dataChanged.emit(self.index(row, 0), self.index(row, 0), [self.SelectedRole])
+
+
+class FakeBackupsViewModel(QObject):
+    """Contrato público do BackupsViewModel, sem I/O ou mutações reais."""
+
+    changed = Signal()
+    confirmationRequested = Signal(str, str, str, str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._model = FakeBackupsModel()
+        self.confirm_calls: list[tuple[str, str]] = []
+        self.cancel_calls = 0
+        self.create_calls = 0
+        self.refresh_calls = 0
+        self.select_calls: list[str] = []
+        self._state = "empty"
+        self._mutation_state = "idle"
+        self._selected_backup_id = ""
+        self._status_message = ""
+        self._error_message = ""
+        self._pending: tuple[str, str] | None = None
+        self._has_selected_summary = False
+
+    def model_fixture_backup(self, backup_id: str) -> None:
+        self._model.replace_fixture((backup_id,), self._selected_backup_id)
+        self._state = "ready"
+        self._has_selected_summary = True
+        self.changed.emit()
+
+    @Slot(object)
+    def setSelectedSummary(self, value: object) -> None:
+        self._has_selected_summary = value is not None
+        self.changed.emit()
+
+    @Slot(str)
+    def selectBackup(self, backup_id: str) -> None:
+        if self._locked:
+            return
+        self.select_calls.append(backup_id)
+        self._selected_backup_id = backup_id
+        self._model.set_selected(backup_id)
+        self.changed.emit()
+
+    @Slot()
+    def createForSelectedSlot(self) -> None:
+        if not self.canCreate:
+            return
+        self.create_calls += 1
+        self._mutation_state = "creating"
+        self.changed.emit()
+
+    @Slot()
+    def refresh(self) -> None:
+        self.refresh_calls += 1
+        self._state = "ready" if self._model.rowCount() else "empty"
+        self.changed.emit()
+
+    @Slot()
+    def requestRestore(self) -> None:
+        self._request("restore", "Confirmar restauração", "Esta ação substituirá o save ativo após criar um backup preventivo.")
+
+    @Slot()
+    def requestDelete(self) -> None:
+        self._request("delete", "Confirmar exclusão", "Esta ação excluirá permanentemente o backup selecionado.")
+
+    def _request(self, action: str, title: str, message: str) -> None:
+        if self._locked or not self._selected_backup_id:
+            return
+        self._pending = action, self._selected_backup_id
+        self.changed.emit()
+        self.confirmationRequested.emit(action, self._selected_backup_id, title, message)
+
+    @Slot(str, str)
+    def confirmAction(self, action: str, backup_id: str) -> None:
+        self.confirm_calls.append((action, backup_id))
+        if self._pending != (action, backup_id):
+            return
+        self._pending = None
+        self._mutation_state = "restoring" if action == "restore" else "deleting"
+        self.changed.emit()
+
+    @Slot()
+    def cancelConfirmation(self) -> None:
+        self.cancel_calls += 1
+        self._pending = None
+        self.changed.emit()
+
+    @Slot(str)
+    def set_fixture_state(self, state: str) -> None:
+        self._state = state
+        self._mutation_state = state if state in {"creating", "restoring", "deleting"} else "idle"
+        self._error_message = "Não foi possível listar os backups." if state == "error" else ""
+        self.changed.emit()
+
+    @property
+    def _locked(self) -> bool:
+        return self._state == "loading" or self._mutation_state != "idle" or self._pending is not None
+
+    state = Property(str, lambda self: self._state, notify=changed)
+    mutationState = Property(str, lambda self: self._mutation_state, notify=changed)
+    selectedBackupId = Property(str, lambda self: self._selected_backup_id, notify=changed)
+    statusMessage = Property(str, lambda self: self._status_message, notify=changed)
+    errorMessage = Property(str, lambda self: self._error_message, notify=changed)
+    canCreate = Property(bool, lambda self: self._state in {"ready", "empty"} and self._has_selected_summary and not self._locked, notify=changed)
+    canRestore = Property(bool, lambda self: self._state == "ready" and bool(self._selected_backup_id) and not self._locked, notify=changed)
+    canDelete = Property(bool, lambda self: self._state == "ready" and bool(self._selected_backup_id) and not self._locked, notify=changed)
+    backupsModel = Property(QObject, lambda self: self._model, constant=True)
+
+
 class FakeController(QObject):
     """Controller de composição usado pelo bootstrap QML."""
 
@@ -246,7 +412,7 @@ class FakeController(QObject):
         self.initialize_calls = 0
         self._dashboard = FakeDashboardViewModel()
         self._saves = FakeSavesViewModel()
-        self._backups = FakeViewModel()
+        self._backups = FakeBackupsViewModel()
         self._settings = FakeViewModel()
         self._diagnostics = FakeViewModel()
 

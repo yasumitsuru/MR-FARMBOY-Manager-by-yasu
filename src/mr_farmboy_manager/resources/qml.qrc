@@ -5,6 +5,7 @@
     <file alias="qml/qmldir">../qml/qmldir</file>
     <file alias="qml/pages/DashboardPage.qml">../qml/pages/DashboardPage.qml</file>
     <file alias="qml/pages/SavesPage.qml">../qml/pages/SavesPage.qml</file>
+    <file alias="qml/pages/BackupsPage.qml">../qml/pages/BackupsPage.qml</file>
     <file alias="qml/components/AppShell.qml">../qml/components/AppShell.qml</file>
     <file alias="qml/components/AppCard.qml">../qml/components/AppCard.qml</file>
     <file alias="qml/components/AppButton.qml">../qml/components/AppButton.qml</file>
