@@ -7,7 +7,7 @@ from mr_farmboy_manager import __version__
 from tools.build_windows import build_command
 
 
-RELEASE_VERSION = "0.1.0"
+RELEASE_VERSION = "0.2.0"
 
 
 def test_release_version_is_consistent_across_package_and_windows_metadata() -> None:
@@ -22,7 +22,12 @@ def test_release_version_is_consistent_across_package_and_windows_metadata() -> 
     assert project["project"]["version"] == RELEASE_VERSION
     assert "Development Status :: 4 - Beta" in project["project"]["classifiers"]
     assert "Development Status :: 1 - Planning" not in project["project"]["classifiers"]
-    assert version_file.read_text(encoding="utf-8").count(RELEASE_VERSION) >= 2
+    version_info = version_file.read_text(encoding="utf-8")
+
+    assert "filevers=(0, 2, 0, 0)" in version_info
+    assert "prodvers=(0, 2, 0, 0)" in version_info
+    assert "StringStruct('FileVersion', '0.2.0')" in version_info
+    assert "StringStruct('ProductVersion', '0.2.0')" in version_info
     assert command[command.index("--version-file") + 1] == str(version_file)
 
 

@@ -5,9 +5,9 @@ detalhes sanitizados e manter backups locais com operações confirmadas.
 
 ## Status
 
-**MVP 0.1.0 utilizável no Windows.**
+**Release 0.2.0 validada no Windows com frontend QML / Qt Quick.**
 
-O MVP inclui:
+A release inclui:
 
 - descoberta de slots `save_<n>`;
 - leitura de progresso do jogador e cultivos em arquivos Godot `.tres`;
@@ -72,7 +72,7 @@ python -m venv .venv
 pip install --upgrade pip
 pip install -e ".[dev]"
 python -m mr_farmboy_manager
-pytest -q
+.venv\Scripts\python.exe -m pytest -q
 ```
 
 Com `uv`, o ambiente travado pode ser reproduzido com:
