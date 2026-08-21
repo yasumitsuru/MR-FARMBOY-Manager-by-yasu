@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QObject, QMetaObject, Qt
+from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl
+from PySide6.QtQml import QQmlComponent, QQmlEngine
 
 
 def _find(root: QObject, name: str) -> QObject:
@@ -18,6 +19,21 @@ def _show(root: QObject, index: int) -> None:
 
 def _click(item: QObject) -> None:
     assert QMetaObject.invokeMethod(item, "click", Qt.ConnectionType.DirectConnection)
+
+
+def _create_narrow_page(controller: QObject, page_name: str) -> tuple[QQmlEngine, QObject]:
+    """Instancia a página fora da janela principal e de sua largura mínima."""
+    from mr_farmboy_manager import _qml_resources  # noqa: F401
+
+    engine = QQmlEngine()
+    component = QQmlComponent(engine, QUrl(f"qrc:/qml/pages/{page_name}.qml"))
+    assert component.isReady(), [str(error) for error in component.errors()]
+    page = component.createWithInitialProperties({"controller": controller})
+    assert page is not None, [str(error) for error in component.errors()]
+    page.setParent(engine)
+    page.setWidth(360)
+    page.setHeight(640)
+    return engine, page
 
 
 def test_normalized_path_feedback_is_visible(qapp, qml_shell, fake_controller) -> None:
@@ -84,17 +100,25 @@ def test_diagnostics_empty_error_and_readable_event_text(qapp, qml_shell, fake_c
     assert "não foi possível" in _find(qml_shell, "diagnosticsStatus").property("text").lower()
 
 
-def test_pages_keep_a_single_outer_scroll_view_when_narrow(qapp, qml_shell) -> None:
-    qml_shell.setWidth(360)
-    _show(qml_shell, 3)
+@pytest.mark.parametrize(
+    ("page_name", "page_object_name", "scroll_object_name"),
+    [
+        ("SettingsPage", "settingsPage", "settingsScrollView"),
+        ("DiagnosticsPage", "diagnosticsPage", "diagnosticsScrollView"),
+    ],
+)
+def test_pages_keep_a_single_outer_scroll_view_when_narrow(
+    qapp, fake_controller, page_name, page_object_name, scroll_object_name
+) -> None:
+    engine, page = _create_narrow_page(fake_controller, page_name)
     qapp.processEvents()
-    assert _find(qml_shell, "settingsPage").property("narrowLayout") is True
-    assert _find(qml_shell, "settingsScrollView").property("contentWidth") == _find(qml_shell, "settingsScrollView").property("availableWidth")
-
-    _show(qml_shell, 4)
-    qapp.processEvents()
-    assert _find(qml_shell, "diagnosticsPage").property("narrowLayout") is True
-    assert _find(qml_shell, "diagnosticsScrollView").property("contentWidth") == _find(qml_shell, "diagnosticsScrollView").property("availableWidth")
+    assert page.objectName() == page_object_name
+    assert page.property("narrowLayout") is True
+    scroll_view = _find(page, scroll_object_name)
+    assert scroll_view.property("contentWidth") == scroll_view.property("availableWidth")
+    assert sum("ScrollView" in child.metaObject().className() for child in page.findChildren(QObject)) == 1
+    page.deleteLater()
+    engine.deleteLater()
 
 
 def test_diagnostic_buttons_reach_python(qapp, qml_shell, fake_controller) -> None:
