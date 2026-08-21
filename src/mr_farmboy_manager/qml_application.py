@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QUrl
+from PySide6.QtCore import QSettings, QStandardPaths, QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
 from mr_farmboy_manager.presentation.app_controller import AppController
-from mr_farmboy_manager.application import (
-    create_application,
-    default_backup_root,
-    runtime_root_from_environment,
-)
 from mr_farmboy_manager.diagnostics import configure_logging
 from mr_farmboy_manager.settings import QtSettingsStore, SettingsStore
 
@@ -24,12 +20,36 @@ from . import _qml_resources  # noqa: F401
 
 
 LOGGER = logging.getLogger(__name__)
+RUNTIME_ROOT_ENVIRONMENT_VARIABLE = "MR_FARMBOY_RUNTIME_ROOT"
+
+
+def default_backup_root() -> Path:
+    """Retorna a pasta local privada do aplicativo para backups persistentes."""
+    base = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppLocalDataLocation
+    )
+    if not base:
+        raise RuntimeError("Diretório local do aplicativo indisponível.")
+    return Path(base) / "backups"
+
+
+def runtime_root_from_environment() -> Path | None:
+    """Retorna um root portátil explícito para build, smoke e diagnóstico."""
+    configured = os.environ.get(RUNTIME_ROOT_ENVIRONMENT_VARIABLE, "").strip()
+    if not configured:
+        return None
+    return Path(configured).resolve(strict=False)
 
 
 def create_qml_application() -> QApplication:
     """Retorna a aplicação Widgets necessária para os adaptadores QFileDialog."""
     QQuickStyle.setStyle("Basic")
-    return create_application()
+    application = QApplication.instance()
+    if application is None:
+        application = QApplication([])
+    application.setOrganizationName("yasu")
+    application.setApplicationName("MR FARMBOY Manager")
+    return application
 
 
 def create_controller(

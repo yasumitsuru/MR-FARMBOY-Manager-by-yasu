@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -10,6 +11,55 @@ from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent, QQmlEngine
 from PySide6.QtTest import QTest
 
 from mr_farmboy_manager.qml_application import create_engine, run
+
+
+def test_create_qml_application_preserves_qt_identity(qapp) -> None:
+    from mr_farmboy_manager.qml_application import create_qml_application
+
+    application = create_qml_application()
+
+    assert application is qapp
+    assert application.organizationName() == "yasu"
+    assert application.applicationName() == "MR FARMBOY Manager"
+
+
+def test_default_backup_root_uses_qt_local_data_location(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import mr_farmboy_manager.qml_application as application
+
+    monkeypatch.setattr(
+        application.QStandardPaths,
+        "writableLocation",
+        lambda _location: str(tmp_path / "local-data"),
+    )
+
+    assert application.default_backup_root() == tmp_path / "local-data" / "backups"
+
+
+def test_default_backup_root_requires_qt_local_data_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mr_farmboy_manager.qml_application as application
+
+    monkeypatch.setattr(application.QStandardPaths, "writableLocation", lambda _location: "")
+
+    with pytest.raises(RuntimeError, match="Diretório local do aplicativo indisponível"):
+        application.default_backup_root()
+
+
+def test_runtime_root_from_environment_is_optional_and_resolved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mr_farmboy_manager.qml_application import runtime_root_from_environment
+
+    monkeypatch.delenv("MR_FARMBOY_RUNTIME_ROOT", raising=False)
+    assert runtime_root_from_environment() is None
+
+    configured = tmp_path / "portable" / ".." / "runtime"
+    monkeypatch.setenv("MR_FARMBOY_RUNTIME_ROOT", str(configured))
+
+    assert runtime_root_from_environment() == configured.resolve(strict=False)
 
 
 def _load_engine_recording_qml_messages(fake_controller):

@@ -97,6 +97,24 @@ dist\MR-FARMBOY-Manager\MR-FARMBOY-Manager.exe
 O smoke test inicia o executável com `APPDATA`, `LOCALAPPDATA`, configuração, logs e
 backups isolados em um diretório temporário.
 
+## Cobertura do frontend QML
+
+A interface Qt Quick substitui integralmente o frontend Qt Widgets removido. A matriz
+abaixo preserva a cobertura dos comportamentos que anteriormente eram exercitados
+pela UI legada.
+
+| Comportamento | Cobertura ativa |
+| --- | --- |
+| Configuração, validação e persistência de pastas | `tests/presentation/test_settings_view_model.py::{test_normalized_slot_is_displayed_and_persisted_as_root,test_invalid_path_cannot_replace_persisted_operational_settings,test_valid_game_path_is_persisted_and_signal_uses_effective_values,test_reload_discards_dirty_draft_and_revalidates_persisted_values}`; `tests/qml/test_settings_diagnostics_pages.py::test_normalized_path_feedback_is_visible` |
+| Atualização automática de cinco minutos | `tests/presentation/test_app_controller.py::test_controller_timer_skips_active_mutation` |
+| Listagem, seleção e detalhes de saves | `tests/presentation/test_saves_view_model.py::{test_refresh_moves_loading_to_ready_and_preserves_selection,test_details_exposes_optional_metrics_and_zero_growth_total,test_new_selection_signal_never_exposes_previous_loaded_details}`; `tests/qml/test_dashboard_saves_pages.py::test_selected_details_and_narrow_layout_remain_available` |
+| Criação e listagem de backups | `tests/presentation/test_backups_view_model.py::{test_create_uses_selected_slot_and_enqueues_one_refresh,test_discovery_error_exposes_only_public_message}`; `tests/qml/test_backups_page.py::test_create_and_restore_controls_reach_their_safe_python_boundaries` |
+| Restauração de backup com confirmação | `tests/presentation/test_backups_view_model.py::{test_restore_requires_matching_confirmation,test_restore_uses_confirmation_snapshot_after_selection_changes}`; `tests/qml/test_backups_page.py::test_dialog_uses_immutable_backup_identity_and_cancel_does_not_mutate` |
+| Exclusão de backup com confirmação | `tests/presentation/test_backups_view_model.py::{test_delete_runs_confirmed_service,test_delete_uses_confirmation_snapshot_after_selection_changes}`; `tests/qml/test_backups_page.py::test_delete_confirmation_keeps_copied_values_and_uses_danger_variant` |
+| Restauração das configurações no início | `tests/presentation/test_app_controller.py::test_initialize_applies_settings_refreshes_pages_and_shutdown_runner`; `tests/presentation/test_settings_view_model.py::test_reload_discards_dirty_draft_and_revalidates_persisted_values` |
+| Escolha de diretório e cancelamento | `tests/presentation/test_settings_view_model.py::test_chooser_cancellation_is_neutral_and_injected_choice_is_validated`; `tests/qml/test_settings_diagnostics_pages.py::test_dirty_settings_enable_save_and_cancelled_chooser_is_neutral` |
+| Confirmações modais e jornada integrada | `tests/test_qml_e2e.py::test_complete_qml_journey_only_mutates_tmp_path`; `tests/qml/test_backups_page.py::test_rejecting_dialog_cancels_once_and_releases_python_lock` |
+
 ## Sobre o jogo
 
 [MR FARMBOY](https://store.steampowered.com/app/2795090/MR_FARMBOY/) é
