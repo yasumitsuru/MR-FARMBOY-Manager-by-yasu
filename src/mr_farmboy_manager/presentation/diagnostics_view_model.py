@@ -34,31 +34,40 @@ class DiagnosticsViewModel(QObject):
         self._copier = copier or self._copy_to_clipboard
         self._events = ""
         self._status_message = ""
+        self._status_severity = "neutral"
 
     @Slot()
     def refresh(self) -> None:
         events = self._read_events()
-        self._replace(events=events, status_message="" if events or self.hasLog else "Log indisponível.")
+        unavailable = not events and not self.hasLog
+        self._replace(
+            events=events,
+            status_message="Log indisponível." if unavailable else "",
+            status_severity="error" if unavailable else "neutral",
+        )
 
     @Slot()
     def openLogDirectory(self) -> None:
         if self._log_path is None:
-            self._replace(status_message="Pasta de logs indisponível.")
+            self._replace(status_message="Pasta de logs indisponível.", status_severity="error")
             return
         try:
             opened = bool(self._opener(self._log_path.parent))
         except Exception:
             opened = False
-        self._replace(status_message="" if opened else "Não foi possível abrir a pasta de logs.")
+        self._replace(
+            status_message="" if opened else "Não foi possível abrir a pasta de logs.",
+            status_severity="neutral" if opened else "error",
+        )
 
     @Slot()
     def copyDiagnostic(self) -> None:
         try:
             self._copier(self._events)
         except Exception:
-            self._replace(status_message="Não foi possível copiar o diagnóstico.")
+            self._replace(status_message="Não foi possível copiar o diagnóstico.", status_severity="error")
             return
-        self._replace(status_message="Diagnóstico copiado.")
+        self._replace(status_message="Diagnóstico copiado.", status_severity="success")
 
     def _read_events(self) -> str:
         if self._log_path is None:
@@ -88,13 +97,22 @@ class DiagnosticsViewModel(QObject):
             raise RuntimeError
         clipboard.setText(value)
 
-    def _replace(self, *, events: str | None = None, status_message: str | None = None) -> None:
+    def _replace(
+        self,
+        *,
+        events: str | None = None,
+        status_message: str | None = None,
+        status_severity: str | None = None,
+    ) -> None:
         changed = False
         if events is not None and events != self._events:
             self._events = events
             changed = True
         if status_message is not None and status_message != self._status_message:
             self._status_message = status_message
+            changed = True
+        if status_severity is not None and status_severity != self._status_severity:
+            self._status_severity = status_severity
             changed = True
         if changed:
             self.changed.emit()
@@ -104,6 +122,7 @@ class DiagnosticsViewModel(QObject):
     events = Property(str, lambda self: self._events, notify=changed)
     hasLog = Property(bool, lambda self: self._log_path is not None and self._log_path.is_file(), notify=changed)
     statusMessage = Property(str, lambda self: self._status_message, notify=changed)
+    statusSeverity = Property(str, lambda self: self._status_severity, notify=changed)
 
 
 __all__ = ["Copier", "DiagnosticsViewModel", "Opener"]

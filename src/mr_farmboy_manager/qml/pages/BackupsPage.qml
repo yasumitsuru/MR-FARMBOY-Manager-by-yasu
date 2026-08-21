@@ -14,6 +14,7 @@ Item {
     readonly property bool selectionEnabled: backups && backups.state === "ready" && backups.mutationState === "idle" && !(shell && shell.backupDialogVisible)
 
     ScrollView {
+        objectName: "backupsScrollView"
         anchors.fill: parent
         clip: true
         contentWidth: availableWidth

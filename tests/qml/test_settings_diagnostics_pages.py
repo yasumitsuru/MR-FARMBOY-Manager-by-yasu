@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
-from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl
+from PySide6.QtCore import QObject, Property, QMetaObject, Qt, QUrl
 from PySide6.QtGui import QColor
 from PySide6.QtQml import QQmlComponent, QQmlEngine
+
+from mr_farmboy_manager.presentation.diagnostics_view_model import DiagnosticsViewModel
+
+
+class _DiagnosticsController(QObject):
+    def __init__(self, diagnostics: DiagnosticsViewModel) -> None:
+        super().__init__()
+        self._diagnostics = diagnostics
+
+    diagnostics = Property(QObject, lambda self: self._diagnostics, constant=True)
 
 
 def _find(root: QObject, name: str) -> QObject:
@@ -111,6 +123,23 @@ def test_diagnostics_success_status_is_not_rendered_as_an_error(qapp, qml_shell,
     qapp.processEvents()
 
     assert _find(qml_shell, "diagnosticsStatus").property("color") == QColor("#59C58B")
+
+
+def test_diagnostics_existing_events_keep_explicit_failure_severity(qapp, tmp_path: Path) -> None:
+    log_path = tmp_path / "manager.log"
+    log_path.write_text("evento existente\n", encoding="utf-8")
+    diagnostics = DiagnosticsViewModel(
+        log_path, copier=lambda _text: (_ for _ in ()).throw(RuntimeError)
+    )
+    diagnostics.refresh()
+    diagnostics.copyDiagnostic()
+    controller = _DiagnosticsController(diagnostics)
+    engine, page = _create_narrow_page(controller, "DiagnosticsPage")
+    qapp.processEvents()
+
+    assert _find(page, "diagnosticsStatus").property("color") == QColor("#ED776D")
+    page.deleteLater()
+    engine.deleteLater()
 
 
 @pytest.mark.parametrize(

@@ -37,3 +37,21 @@ def test_diagnostics_failure_is_public_and_never_exposes_exception(tmp_path: Pat
     assert vm.events == ""
     assert vm.hasLog is False
     assert "secret" not in vm.statusMessage
+
+
+def test_existing_events_keep_error_severity_when_copy_or_open_fails(tmp_path: Path, qapp) -> None:
+    log_path = tmp_path / "manager.log"
+    log_path.write_text("evento existente\n", encoding="utf-8")
+    vm = DiagnosticsViewModel(
+        log_path,
+        opener=lambda _path: (_ for _ in ()).throw(RuntimeError),
+        copier=lambda _text: (_ for _ in ()).throw(RuntimeError),
+    )
+
+    vm.refresh()
+    vm.copyDiagnostic()
+    assert vm.events == "evento existente"
+    assert vm.statusSeverity == "error"
+
+    vm.openLogDirectory()
+    assert vm.statusSeverity == "error"

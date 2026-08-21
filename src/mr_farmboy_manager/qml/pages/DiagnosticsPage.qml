@@ -12,6 +12,7 @@ Item {
     property var shell
     readonly property bool narrowLayout: width < 700
     readonly property bool hasDiagnosticEvents: diagnostics && diagnostics.events.length > 0
+    readonly property string diagnosticStatusSeverity: diagnostics && typeof diagnostics.statusSeverity === "string" ? diagnostics.statusSeverity : (hasDiagnosticEvents ? "success" : "error")
     readonly property string diagnosticText: hasDiagnosticEvents ? diagnostics.events : "Nenhum evento de diagnóstico disponível."
 
     ScrollView {
@@ -58,7 +59,7 @@ Item {
                         wrapMode: TextEdit.WrapAnywhere
                         selectByMouse: true
                     }
-                    Text { objectName: "diagnosticsStatus"; Layout.fillWidth: true; visible: diagnostics && diagnostics.statusMessage.length > 0; text: diagnostics ? diagnostics.statusMessage : ""; color: page.hasDiagnosticEvents ? AppTheme.Theme.success : AppTheme.Theme.error; font.family: AppTheme.Theme.bodyFont; wrapMode: Text.WordWrap }
+                    Text { objectName: "diagnosticsStatus"; Layout.fillWidth: true; visible: diagnostics && diagnostics.statusMessage.length > 0; text: diagnostics ? diagnostics.statusMessage : ""; color: page.diagnosticStatusSeverity === "success" ? AppTheme.Theme.success : (page.diagnosticStatusSeverity === "error" ? AppTheme.Theme.error : AppTheme.Theme.textSecondary); font.family: AppTheme.Theme.bodyFont; wrapMode: Text.WordWrap }
                     RowLayout {
                         Layout.fillWidth: true
                         AppButton { objectName: "copyDiagnosticButton"; text: "Copiar diagnóstico"; onClicked: if (diagnostics) diagnostics.copyDiagnostic() }

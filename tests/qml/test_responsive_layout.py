@@ -75,6 +75,8 @@ def test_named_page_layout_items_have_finite_geometry_and_valid_scroll_width(
     for page_index, names, scroll_name in (
         (0, ("dashboardPage", "dashboardHeader", "dashboardCropPanel"), None),
         (1, ("savesPage", "savesLedgerHeader", "refreshSavesButton", "saveDetailsPanel"), None),
+        (2, ("backupsPage", "createBackupButton", "backupsList"), "backupsScrollView"),
+        (3, ("settingsPage", "saveRootField", "saveSettingsButton"), "settingsScrollView"),
         (4, ("diagnosticsPage", "diagnosticsEvents", "diagnosticsStatus"), "diagnosticsScrollView"),
     ):
         _find(qml_shell, "appShell").setProperty("currentIndex", page_index)
