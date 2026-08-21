@@ -92,8 +92,8 @@ Item {
                 DashboardPage { controller: shell.controller; shell: shell }
                 SavesPage { controller: shell.controller; shell: shell }
                 BackupsPage { controller: shell.controller; shell: shell }
-                Item { Accessible.name: shell.pageTitles[3] }
-                Item { Accessible.name: shell.pageTitles[4] }
+                SettingsPage { controller: shell.controller; shell: shell }
+                DiagnosticsPage { controller: shell.controller; shell: shell }
             }
         }
     }

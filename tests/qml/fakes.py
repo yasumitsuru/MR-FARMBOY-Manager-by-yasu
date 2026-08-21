@@ -105,6 +105,107 @@ class FakeViewModel(QObject):
     errorMessage = Property(str, lambda self: self._error_message, notify=changed)
 
 
+class FakeSettingsViewModel(QObject):
+    """Contrato de configurações suficiente para testes QML, sem I/O."""
+
+    changed = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._save_root = ""
+        self._game_install_root = ""
+        self._save_state = "empty"
+        self._game_state = "empty"
+        self._save_message = ""
+        self._game_message = ""
+        self._persisted = ("", "")
+
+    @Slot(str)
+    def setSaveRoot(self, value: str) -> None:
+        self._save_root = value
+        self._save_state = "valid" if value else "empty"
+        self._save_message = "Diretório de saves válido." if value else ""
+        self.changed.emit()
+
+    @Slot(str)
+    def setGameInstallRoot(self, value: str) -> None:
+        self._game_install_root = value
+        self._game_state = "valid" if value else "empty"
+        self.changed.emit()
+
+    @Slot()
+    def chooseSaveRoot(self) -> None:
+        """Simula cancelamento: um chooser vazio não altera o rascunho."""
+
+    @Slot()
+    def chooseGameInstallRoot(self) -> None:
+        """Simula cancelamento: um chooser vazio não altera o rascunho."""
+
+    @Slot()
+    def save(self) -> None:
+        if self.canSave:
+            self._persisted = (self._save_root, self._game_install_root)
+            self.changed.emit()
+
+    def set_fixture_save_root(self, value: str, message: str) -> None:
+        self._save_root = value
+        self._save_state = "valid"
+        self._save_message = message
+        self.changed.emit()
+
+    def set_fixture_states(self, save_state: str, game_state: str) -> None:
+        self._save_state = save_state
+        self._game_state = game_state
+        self.changed.emit()
+
+    saveRoot = Property(str, lambda self: self._save_root, notify=changed)
+    gameInstallRoot = Property(str, lambda self: self._game_install_root, notify=changed)
+    backupRootLabel = Property(str, lambda self: "C:/backups", constant=True)
+    saveRootState = Property(str, lambda self: self._save_state, notify=changed)
+    gameInstallState = Property(str, lambda self: self._game_state, notify=changed)
+    saveRootMessage = Property(str, lambda self: self._save_message, notify=changed)
+    gameInstallMessage = Property(str, lambda self: self._game_message, notify=changed)
+    hasUnsavedChanges = Property(
+        bool, lambda self: (self._save_root, self._game_install_root) != self._persisted, notify=changed
+    )
+    canSave = Property(
+        bool,
+        lambda self: self._save_state in {"valid", "empty"} and self._game_state in {"valid", "empty"},
+        notify=changed,
+    )
+
+
+class FakeDiagnosticsViewModel(QObject):
+    """Diagnósticos determinísticos com ações verificáveis no limite Python."""
+
+    changed = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._events = ""
+        self._status_message = ""
+        self.copy_calls = 0
+        self.open_calls = 0
+
+    @Slot()
+    def copyDiagnostic(self) -> None:
+        self.copy_calls += 1
+
+    @Slot()
+    def openLogDirectory(self) -> None:
+        self.open_calls += 1
+
+    def set_fixture_events(self, events: str, status_message: str) -> None:
+        self._events = events
+        self._status_message = status_message
+        self.changed.emit()
+
+    events = Property(str, lambda self: self._events, notify=changed)
+    statusMessage = Property(str, lambda self: self._status_message, notify=changed)
+    logPathLabel = Property(str, lambda self: "C:/logs/mr-farmboy.log", constant=True)
+    logDirectoryLabel = Property(str, lambda self: "C:/logs", constant=True)
+
+
 class FakeDashboardViewModel(QObject):
     """Snapshot de dados reais projetado para a página Dashboard."""
 
@@ -426,8 +527,8 @@ class FakeController(QObject):
         self._dashboard = FakeDashboardViewModel()
         self._saves = FakeSavesViewModel()
         self._backups = FakeBackupsViewModel()
-        self._settings = FakeViewModel()
-        self._diagnostics = FakeViewModel()
+        self._settings = FakeSettingsViewModel()
+        self._diagnostics = FakeDiagnosticsViewModel()
 
     @Slot()
     def initialize(self) -> None:
