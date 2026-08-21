@@ -178,8 +178,8 @@ class SavesViewModel(QObject):
         before = self._public_values()
         self._selected_summary = summary
         self._slots_model.set_selected(summary.slot.name)
-        self.selectedSummaryChanged.emit(summary)
         self._request_details(summary)
+        self.selectedSummaryChanged.emit(summary)
         self._notify_if_changed(before)
 
     @Slot()

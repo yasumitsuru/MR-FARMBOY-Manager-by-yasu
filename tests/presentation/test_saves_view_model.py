@@ -275,3 +275,16 @@ def test_selection_notifications_only_emit_for_actual_changes(tmp_path: Path, qa
         "save_1",
         None,
     ]
+
+
+def test_new_selection_signal_never_exposes_previous_loaded_details(tmp_path: Path, qapp) -> None:
+    runner = ControlledOperationRunner()
+    vm = configured_saves_view_model(runner, tmp_path)
+    vm.selectSlot("save_1")
+    runner.complete_next()
+    observed: list[tuple[str, object]] = []
+    vm.selectedSummaryChanged.connect(lambda _summary: observed.append((vm.detailsState, vm._loaded_details)))
+
+    vm.selectSlot("save_2")
+
+    assert observed == [("loading", None)]
