@@ -31,6 +31,18 @@ def test_release_version_is_consistent_across_package_and_windows_metadata() -> 
     assert command[command.index("--version-file") + 1] == str(version_file)
 
 
+def test_uv_lock_pins_current_project_release_version() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    lock = tomllib.loads((project_root / "uv.lock").read_text(encoding="utf-8"))
+    package = next(
+        item
+        for item in lock["package"]
+        if item["name"] == "mr-farmboy-manager-by-yasu"
+    )
+
+    assert package["version"] == RELEASE_VERSION
+
+
 def test_changelog_contains_dated_mvp_release() -> None:
     project_root = Path(__file__).resolve().parents[1]
     changelog = (project_root / "CHANGELOG.md").read_text(encoding="utf-8")
