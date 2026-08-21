@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from PySide6.QtCore import QObject, QMetaObject, QPointF, Qt
+from PySide6.QtCore import QElapsedTimer, QObject, QMetaObject, QPointF, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
@@ -33,6 +33,20 @@ def _assert_valid_geometry(item: QObject) -> None:
     assert isinstance(item, QQuickItem)
     values = (item.x(), item.y(), item.width(), item.height())
     assert all(math.isfinite(value) and value >= 0 for value in values)
+
+
+def _wait_for_color(qapp, item: QObject, expected: QColor, timeout_ms: int = 1000) -> None:
+    timer = QElapsedTimer()
+    timer.start()
+    actual = item.property("color")
+    while actual != expected and timer.elapsed() < timeout_ms:
+        qapp.processEvents()
+        QTest.qWait(10)
+        actual = item.property("color")
+    assert actual == expected, (
+        f"A cor animada não alcançou {expected.name()} em {timeout_ms} ms; "
+        f"cor atual: {actual.name()}."
+    )
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
@@ -97,11 +111,10 @@ def test_delete_confirmation_uses_solid_danger_surface_with_contrasting_text(
     _find(qml_shell, "appShell").setProperty("currentIndex", 2)
     _click(_find(qml_shell, "deleteBackupButton"))
     qapp.processEvents()
-    QTest.qWait(200)
 
     danger = _find(qml_shell, "confirmDialogConfirmButton")
     background = danger.property("background")
     content = danger.property("contentItem")
     assert danger.property("variant") == "danger"
-    assert background.property("color") == QColor("#ED776D")
+    _wait_for_color(qapp, background, QColor("#ED776D"))
     assert content.property("color") == QColor("#0B1410")
