@@ -59,6 +59,35 @@ def test_controller_timer_skips_active_mutation(tmp_path: Path, qapp) -> None:
     assert backups.refresh_calls == 0
 
 
+def test_controller_timer_refreshes_idle_pages_after_initialization(
+    tmp_path: Path, qapp
+) -> None:
+    runner = ControlledOperationRunner()
+    saves = _Saves(runner)
+    backups = _Backups(runner, tmp_path / "backups")
+    settings = SettingsViewModel(_Store(), tmp_path / "backups")
+    controller = AppController(
+        _Store(),
+        tmp_path / "backups",
+        runner=runner,
+        saves=saves,
+        backups=backups,
+        settings=settings,
+    )
+
+    controller.initialize()
+    save_refreshes_before_timeout = saves.refresh_calls
+    backup_refreshes_before_timeout = backups.refresh_calls
+
+    assert controller._timer.isActive() is True
+    assert controller._timer.interval() == 300000
+    controller.triggerAutoRefreshForTest()
+
+    assert saves.refresh_calls == save_refreshes_before_timeout + 1
+    assert backups.refresh_calls == backup_refreshes_before_timeout + 1
+    assert controller.shutdown() is True
+
+
 def test_initialize_applies_settings_refreshes_pages_and_shutdown_runner(tmp_path: Path, qapp) -> None:
     runner = ControlledOperationRunner()
     saves = _Saves(runner)
