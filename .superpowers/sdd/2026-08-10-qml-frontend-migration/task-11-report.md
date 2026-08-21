@@ -49,3 +49,11 @@
 - O isolamento captura recursivamente a área externa à árvore da execução
   (tipo, metadados e hash), além de validar em wrappers que cada fronteira
   mutável recebe somente caminhos dentro de `tmp_path`.
+
+## Fix round 2
+
+- A jornada usa cliques reais em `saveSlotsList`, `backupsList` e
+  `refreshSavesButton`; não chama slots equivalentes diretamente.
+- A recomputação real do dashboard permaneceu ativa; o controller agora mantém
+  o DTO de detalhes carregado para projetar o dashboard sem confundir o
+  ViewModel QML com o DTO de domínio.

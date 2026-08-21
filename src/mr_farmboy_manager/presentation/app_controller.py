@@ -99,7 +99,7 @@ class AppController(QObject):
 
     @Slot()
     def _recompute_dashboard(self) -> None:
-        details = self._saves.details if self._saves.detailsState == "ready" else None
+        details = self._saves._loaded_details if self._saves.detailsState == "ready" else None
         backups = tuple(getattr(self._backups, "_backups", ()))
         self._dashboard.update(
             self._saves.slotsModel.rowCount(),

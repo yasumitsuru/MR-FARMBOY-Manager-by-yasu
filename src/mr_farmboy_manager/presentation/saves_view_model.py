@@ -124,6 +124,7 @@ class SavesViewModel(QObject):
         self._details_loader = details_loader
         self._slots_model = SaveSlotsModel(self)
         self._details = SaveDetailsViewModel(self)
+        self._loaded_details: SaveSlotDetails | None = None
         self._save_root = ""
         self._state = "idle"
         self._details_state = "idle"
@@ -196,6 +197,7 @@ class SavesViewModel(QObject):
         self._detail_request = None
         self._detail_context = None
         self._details.clear()
+        self._loaded_details = None
         self._set_values(details_state="idle")
         self.selectedSummaryChanged.emit(None)
 
@@ -239,6 +241,7 @@ class SavesViewModel(QObject):
         self._detail_request = None
         self._detail_context = None
         self._details.apply(value)
+        self._loaded_details = value
         before = self._public_values()
         self._set_values(details_state="ready")
         self._notify_if_changed(before)
@@ -270,6 +273,7 @@ class SavesViewModel(QObject):
         self._detail_request = None
         self._detail_context = None
         self._details.clear()
+        self._loaded_details = None
         before = self._public_values()
         self._set_values(details_state="error", error_message=public_message)
         self._notify_if_changed(before)

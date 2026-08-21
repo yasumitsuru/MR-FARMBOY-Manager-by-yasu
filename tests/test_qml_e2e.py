@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from PySide6.QtCore import QMetaObject, QObject, QSettings, Qt
+from PySide6.QtCore import QMetaObject, QObject, QPoint, QSettings, Qt
+from PySide6.QtTest import QTest
 from mr_farmboy_manager.backups import create_backup, delete_backup, restore_backup
 from mr_farmboy_manager.diagnostics import configure_logging
 from mr_farmboy_manager.presentation.app_controller import AppController
@@ -26,6 +27,10 @@ def _find(root: QObject, name: str) -> QObject:
 
 def _click(item: QObject) -> None:
     assert QMetaObject.invokeMethod(item, "click", Qt.ConnectionType.DirectConnection)
+
+def _click_first_row(root: QObject, list_name: str) -> None:
+    item = _find(root, list_name); point = item.mapToScene(QPoint(12, 12)).toPoint()
+    QTest.mouseClick(root, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
 
 def _delegate(root: QObject, property_name: str, value: str) -> QObject:
     found = next((item for item in root.findChildren(QObject) if item.property(property_name) == value), None)
@@ -52,22 +57,22 @@ def test_complete_qml_journey_only_mutates_tmp_path(tmp_path: Path, qapp) -> Non
     runner = ControlledOperationRunner(); settings_path = runtime / "settings.ini"
     settings = SettingsViewModel(QtSettingsStore(QSettings(str(settings_path), QSettings.Format.IniFormat)), runtime / "backups")
     backups = BackupsViewModel(runner, runtime / "backups", creator=creator, restorer=restorer, deleter=deleter)
-    controller = AppController(settings=settings, backups=backups, runner=runner, log_path=runtime / "logs" / "mr-farmboy-manager.log"); controller._recompute_dashboard = lambda: None
+    controller = AppController(settings=settings, backups=backups, runner=runner, log_path=runtime / "logs" / "mr-farmboy-manager.log")
     log_path = configure_logging(runtime / "logs"); assert log_path is not None and log_path.is_relative_to(tmp_path)
     engine = create_engine(controller); root = engine.rootObjects()[0]
     try:
-        controller.initialize(); runner.complete_next(); controller.saves.changed.disconnect(controller._child_state_changed); _find(root, "appShell").setProperty("currentIndex", 3)
+        controller.initialize(); runner.complete_next(); _find(root, "appShell").setProperty("currentIndex", 3)
         field = _find(root, "saveRootField"); field.setProperty("text", str(game_data)); assert QMetaObject.invokeMethod(field, "editingFinished", Qt.ConnectionType.DirectConnection)
         _click(_find(root, "saveSettingsButton")); runner.complete_next(); qapp.processEvents(); assert _find(root, "saveRootMessage").property("text") == "Diretório de saves válido."
-        _find(root, "appShell").setProperty("currentIndex", 1); qapp.processEvents(); controller.saves.selectSlot("save_1"); runner.complete_next(); qapp.processEvents(); assert controller.saves.details.inspectedFileCount == 2 and _find(root, "saveDetailRecordCount").property("text") == "0"
+        _find(root, "appShell").setProperty("currentIndex", 1); qapp.processEvents(); _click_first_row(root, "saveSlotsList"); runner.complete_next(); qapp.processEvents(); assert controller.saves.details.inspectedFileCount == 2 and _find(root, "saveDetailRecordCount").property("text") == "0"
         _find(root, "appShell").setProperty("currentIndex", 2); qapp.processEvents(); _click(_find(root, "createBackupButton")); runner.complete_next(); runner.complete_next(); qapp.processEvents()
-        backup_id = controller.backups.backupsModel.index(0, 0).data(257); controller.backups.selectBackup(backup_id); player.write_text(original.replace(" = 1", " = 9"), encoding="utf-8")
+        backup_id = controller.backups.backupsModel.index(0, 0).data(257); _click_first_row(root, "backupsList"); player.write_text(original.replace(" = 1", " = 9"), encoding="utf-8")
         assert controller.backups.canRestore; _click(_find(root, "restoreBackupButton")); _click(_find(root, "confirmDialogConfirmButton")); runner.complete_next();
         if runner._pending: runner.complete_next()
         qapp.processEvents(); assert player.read_text(encoding="utf-8") == original
-        controller.backups.selectBackup(backup_id); _click(_find(root, "deleteBackupButton")); _click(_find(root, "confirmDialogConfirmButton")); runner.complete_next()
+        _click_first_row(root, "backupsList"); _click(_find(root, "deleteBackupButton")); _click(_find(root, "confirmDialogConfirmButton")); runner.complete_next()
         if runner._pending: runner.complete_next()
-        qapp.processEvents(); controller.saves.refresh(); runner.complete_next(); qapp.processEvents()
+        qapp.processEvents(); _find(root, "appShell").setProperty("currentIndex", 1); _click(_find(root, "refreshSavesButton")); runner.complete_next(); qapp.processEvents()
         logging.getLogger("mr_farmboy_manager").info("qml.e2e.completed slot=1")
         for handler in logging.getLogger("mr_farmboy_manager").handlers: handler.flush()
         assert str(tmp_path) not in log_path.read_text(encoding="utf-8"); assert received_paths

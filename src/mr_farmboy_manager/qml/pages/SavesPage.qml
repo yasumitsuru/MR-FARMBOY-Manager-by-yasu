@@ -53,6 +53,7 @@ Item {
                             spacing: AppTheme.Theme.space8
                             delegate: Button {
                                 id: saveDelegate
+                                objectName: "saveRecord-" + slotId
                                 required property string slotId
                                 required property string displayName
                                 required property int slotNumber
