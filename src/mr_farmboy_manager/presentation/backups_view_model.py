@@ -213,7 +213,12 @@ class BackupsViewModel(QObject):
         before = self._public_values()
         self._pending_confirmation = action, record.backup_id, summary
         self._notify_if_changed(before)
-        self.confirmationRequested.emit(action, record.backup_id, title, message)
+        snapshot_message = (
+            f"Slot {record.slot_number}\nBackup: {record.backup_id}\n\n{message}"
+        )
+        self.confirmationRequested.emit(
+            action, record.backup_id, title, snapshot_message
+        )
 
     def _submit_mutation(
         self, action: str, backup_id: str, work: Callable[[], object]

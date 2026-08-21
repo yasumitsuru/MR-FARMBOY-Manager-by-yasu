@@ -464,7 +464,7 @@ W\x82D\xf3\xbd\xfd\x16z\x92\xcff+?\xdb[\x84\
 r\xa5\xff\x83\x04laK\xab\x82q\xea\x0fJ\xc3\xce\
 q\xab\xfd\xb3\xad\xe2\xd3z\xb0\x1e\xfc\x03\xcd\xc4\x9e\xcb\
 \
-\x00\x00\x06|\
+\x00\x00\x07u\
 i\
 mport QtQuick\x0aim\
 port QtQuick.Con\
@@ -483,51 +483,66 @@ tle: \x22Confirmar \
 a\xc3\xa7\xc3\xa3o\x22\x0a    prop\
 erty string conf\
 irmationMessage:\
- \x22\x22\x0a    signal c\
-onfirmed(string \
-action, string b\
-ackupId)\x0a    sig\
-nal cancelled()\x0a\
-    modal: true\x0a\
-    focus: true\x0a\
-    title: confi\
-rmationTitle\x0a   \
- width: 420\x0a    \
-standardButtons:\
- Dialog.NoButton\
-\x0a    function op\
-enConfirmation(a\
-ctionValue, back\
-upIdValue, title\
-Value, messageVa\
-lue) {\x0a        a\
-ction = actionVa\
-lue\x0a        back\
-upId = backupIdV\
-alue\x0a        con\
-firmationTitle =\
- titleValue\x0a    \
-    confirmation\
-Message = messag\
-eValue\x0a        o\
-pen()\x0a    }\x0a    \
-background: Rect\
-angle { color: A\
-ppTheme.Theme.su\
-rface; radius: A\
-ppTheme.Theme.ra\
-diusPanel; borde\
-r.width: AppThem\
-e.Theme.borderWi\
-dth; border.colo\
-r: AppTheme.Them\
-e.border }\x0a    c\
-ontentItem: Colu\
-mnLayout {\x0a     \
-   spacing: AppT\
-heme.Theme.space\
-16\x0a        Text \
-{ text: dialog.c\
+ \x22\x22\x0a    property\
+ bool resolution\
+Handled: false\x0a \
+   signal confir\
+med(string actio\
+n, string backup\
+Id)\x0a    signal c\
+ancelled()\x0a    m\
+odal: true\x0a    f\
+ocus: true\x0a    t\
+itle: confirmati\
+onTitle\x0a    widt\
+h: 420\x0a    stand\
+ardButtons: Dial\
+og.NoButton\x0a    \
+function openCon\
+firmation(action\
+Value, backupIdV\
+alue, titleValue\
+, messageValue) \
+{\x0a        action\
+ = actionValue\x0a \
+       backupId \
+= backupIdValue\x0a\
+        confirma\
+tionTitle = titl\
+eValue\x0a        c\
+onfirmationMessa\
+ge = messageValu\
+e\x0a        resolu\
+tionHandled = fa\
+lse\x0a        open\
+()\x0a    }\x0a    onC\
+losed: {\x0a       \
+ if (!resolution\
+Handled) {\x0a     \
+       resolutio\
+nHandled = true\x0a\
+            canc\
+elled()\x0a        \
+}\x0a    }\x0a    back\
+ground: Rectangl\
+e { color: AppTh\
+eme.Theme.surfac\
+e; radius: AppTh\
+eme.Theme.radius\
+Panel; border.wi\
+dth: AppTheme.Th\
+eme.borderWidth;\
+ border.color: A\
+ppTheme.Theme.bo\
+rder }\x0a    conte\
+ntItem: ColumnLa\
+yout {\x0a        s\
+pacing: AppTheme\
+.Theme.space16\x0a \
+       Text { ob\
+jectName: \x22confi\
+rmDialogMessage\x22\
+; text: dialog.c\
 onfirmationMessa\
 ge; color: AppTh\
 eme.Theme.textPr\
@@ -551,25 +566,26 @@ tton { objectNam\
 e: \x22confirmDialo\
 gCancelButton\x22; \
 text: \x22Cancelar\x22\
-; onClicked: { d\
-ialog.cancelled(\
-); dialog.close(\
-) } }\x0a          \
-  AppButton { ob\
-jectName: \x22confi\
-rmDialogConfirmB\
-utton\x22; text: \x22C\
-onfirmar\x22; varia\
-nt: dialog.actio\
-n === \x22delete\x22 ?\
- \x22danger\x22 : \x22pri\
-mary\x22; onClicked\
-: { dialog.confi\
-rmed(dialog.acti\
-on, dialog.backu\
-pId); dialog.clo\
-se() } }\x0a       \
- }\x0a    }\x0a}\x0a\
+; onClicked: dia\
+log.close() }\x0a  \
+          AppBut\
+ton { objectName\
+: \x22confirmDialog\
+ConfirmButton\x22; \
+text: \x22Confirmar\
+\x22; variant: dial\
+og.action === \x22d\
+elete\x22 ? \x22danger\
+\x22 : \x22primary\x22; o\
+nClicked: { dial\
+og.resolutionHan\
+dled = true; dia\
+log.confirmed(di\
+alog.action, dia\
+log.backupId); d\
+ialog.close() } \
+}\x0a        }\x0a    \
+}\x0a}\x0a\
 \x00\x00\x06h\
 i\
 mport QtQuick\x0aim\
@@ -1394,27 +1410,27 @@ qt_resource_struct = b"\
 \x00\x00\x01\x9f\xed]\xe8\xc2\
 \x00\x00\x00<\x00\x01\x00\x00\x00\x01\x00\x00\x01\xa2\
 \x00\x00\x01\x9f\xedT\xaa\xad\
-\x00\x00\x01R\x00\x00\x00\x00\x00\x01\x00\x00+p\
+\x00\x00\x01R\x00\x00\x00\x00\x00\x01\x00\x00,i\
 \x00\x00\x01\x9f\xedT\xbeZ\
-\x00\x00\x02\x06\x00\x00\x00\x00\x00\x01\x00\x00?\x97\
+\x00\x00\x02\x06\x00\x00\x00\x00\x00\x01\x00\x00@\x90\
 \x00\x00\x01\x9f\xedQ\x94\x81\
 \x00\x00\x00\xe2\x00\x00\x00\x00\x00\x01\x00\x00\x1b\xe0\
-\x00\x00\x01\x9f\xfb\xd6\x01V\
-\x00\x00\x01\xe8\x00\x01\x00\x00\x00\x01\x00\x008\xb1\
+\x00\x00\x01\xa0\x22\xd6\x80\x9f\
+\x00\x00\x01\xe8\x00\x01\x00\x00\x00\x01\x00\x009\xaa\
 \x00\x00\x01\x9f\xfb\xd5H\xc1\
-\x00\x00\x02L\x00\x00\x00\x00\x00\x01\x00\x00K\xcb\
+\x00\x00\x02L\x00\x00\x00\x00\x00\x01\x00\x00L\xc4\
 \x00\x00\x01\x9f\xedQ\x86\x9b\
-\x00\x00\x01\xc0\x00\x00\x00\x00\x00\x01\x00\x004\xf7\
+\x00\x00\x01\xc0\x00\x00\x00\x00\x00\x01\x00\x005\xf0\
 \x00\x00\x01\x9f\xedT\xb7\x98\
-\x00\x00\x016\x00\x00\x00\x00\x00\x01\x00\x00(\xcc\
+\x00\x00\x016\x00\x00\x00\x00\x00\x01\x00\x00)\xc5\
 \x00\x00\x01\x9f\xedT\xc4\xb6\
-\x00\x00\x01\x9c\x00\x00\x00\x00\x00\x01\x00\x001\xdb\
+\x00\x00\x01\x9c\x00\x00\x00\x00\x00\x01\x00\x002\xd4\
 \x00\x00\x01\x9f\xedQ\x9bW\
-\x00\x00\x01\x16\x00\x00\x00\x00\x00\x01\x00\x00\x22`\
+\x00\x00\x01\x16\x00\x00\x00\x00\x00\x01\x00\x00#Y\
 \x00\x00\x01\x9f\xedQ\x8d=\
-\x00\x00\x01t\x00\x00\x00\x00\x00\x01\x00\x00.\xda\
+\x00\x00\x01t\x00\x00\x00\x00\x00\x01\x00\x00/\xd3\
 \x00\x00\x01\x9f\xedQ\xb9V\
-\x00\x00\x02(\x00\x00\x00\x00\x00\x01\x00\x00CS\
+\x00\x00\x02(\x00\x00\x00\x00\x00\x01\x00\x00DL\
 \x00\x00\x01\x9f\xed^\x88\xf8\
 \x00\x00\x00\xbe\x00\x01\x00\x00\x00\x01\x00\x00\x13\x8b\
 \x00\x00\x01\x9f\xfb\xd6\xc3\xff\

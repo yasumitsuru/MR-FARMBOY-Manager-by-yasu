@@ -351,18 +351,31 @@ class FakeBackupsViewModel(QObject):
 
     @Slot()
     def requestRestore(self) -> None:
-        self._request("restore", "Confirmar restauração", "Esta ação substituirá o save ativo após criar um backup preventivo.")
+        self._request(
+            "restore",
+            "Confirmar restauração",
+            "Esta ação substituirá o save ativo após criar um backup preventivo.",
+        )
 
     @Slot()
     def requestDelete(self) -> None:
-        self._request("delete", "Confirmar exclusão", "Esta ação excluirá permanentemente o backup selecionado.")
+        self._request(
+            "delete",
+            "Confirmar exclusão",
+            "Esta ação excluirá permanentemente o backup selecionado.",
+        )
 
     def _request(self, action: str, title: str, message: str) -> None:
         if self._locked or not self._selected_backup_id:
             return
         self._pending = action, self._selected_backup_id
         self.changed.emit()
-        self.confirmationRequested.emit(action, self._selected_backup_id, title, message)
+        snapshot_message = (
+            f"Slot 1\nBackup: {self._selected_backup_id}\n\n{message}"
+        )
+        self.confirmationRequested.emit(
+            action, self._selected_backup_id, title, snapshot_message
+        )
 
     @Slot(str, str)
     def confirmAction(self, action: str, backup_id: str) -> None:

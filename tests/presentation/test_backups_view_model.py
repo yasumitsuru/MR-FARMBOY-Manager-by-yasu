@@ -89,6 +89,31 @@ def test_restore_requires_matching_confirmation(tmp_path: Path, qapp) -> None:
     assert runner._pending == []
 
 
+def test_confirmation_snapshot_contains_slot_backup_identity_and_consequence(
+    tmp_path: Path, qapp
+) -> None:
+    vm, _runner, record = ready_backups_vm(tmp_path)
+    vm.selectBackup(record.backup_id)
+    requests: list[tuple[str, str, str, str]] = []
+    vm.confirmationRequested.connect(
+        lambda action, backup_id, title, message: requests.append(
+            (action, backup_id, title, message)
+        )
+    )
+
+    vm.requestRestore()
+
+    assert requests == [
+        (
+            "restore",
+            record.backup_id,
+            "Confirmar restauração",
+            f"Slot 1\nBackup: {record.backup_id}\n\n"
+            "Esta ação substituirá o save ativo após criar um backup preventivo.",
+        )
+    ]
+
+
 def test_delete_runs_confirmed_service(tmp_path: Path, qapp) -> None:
     deleter = Mock(return_value=delete_success(BACKUP_ID))
     vm, runner, record = ready_backups_vm(tmp_path, deleter=deleter)

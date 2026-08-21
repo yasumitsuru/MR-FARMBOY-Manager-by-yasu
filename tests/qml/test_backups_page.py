@@ -46,6 +46,26 @@ def test_dialog_uses_immutable_backup_identity_and_cancel_does_not_mutate(qapp, 
     assert fake_controller.backups.cancel_calls == 1
 
 
+def test_rejecting_dialog_cancels_once_and_releases_python_lock(
+    qapp, qml_shell, fake_controller
+) -> None:
+    fake_controller.backups.model_fixture_backup("backup-id")
+    fake_controller.backups.selectBackup("backup-id")
+    _show_backups(qml_shell)
+    _click(_find(qml_shell, "deleteBackupButton"))
+    dialog = _find(qml_shell, "backupConfirmDialog")
+
+    assert QMetaObject.invokeMethod(
+        dialog, "reject", Qt.ConnectionType.DirectConnection
+    )
+    qapp.processEvents()
+    qapp.processEvents()
+
+    assert dialog.property("visible") is False
+    assert fake_controller.backups.cancel_calls == 1
+    assert fake_controller.backups.canDelete is True
+
+
 def test_delete_confirmation_keeps_copied_values_and_uses_danger_variant(qapp, qml_shell, fake_controller) -> None:
     fake_controller.backups.model_fixture_backup("backup-id")
     fake_controller.backups.selectBackup("backup-id")
@@ -58,7 +78,39 @@ def test_delete_confirmation_keeps_copied_values_and_uses_danger_variant(qapp, q
     qapp.processEvents()
 
     assert fake_controller.backups.confirm_calls == [("delete", "backup-id")]
+    assert fake_controller.backups.cancel_calls == 0
     assert _find(dialog, "confirmDialogConfirmButton").property("variant") == "danger"
+
+
+@pytest.mark.parametrize(
+    ("button_name", "consequence"),
+    [
+        (
+            "restoreBackupButton",
+            "Esta ação substituirá o save ativo após criar um backup preventivo.",
+        ),
+        (
+            "deleteBackupButton",
+            "Esta ação excluirá permanentemente o backup selecionado.",
+        ),
+    ],
+)
+def test_confirmation_shows_frozen_slot_identity_and_consequence(
+    qapp, qml_shell, fake_controller, button_name: str, consequence: str
+) -> None:
+    fake_controller.backups.model_fixture_backup("backup-id")
+    fake_controller.backups.selectBackup("backup-id")
+    _show_backups(qml_shell)
+    _click(_find(qml_shell, button_name))
+    message = _find(qml_shell, "confirmDialogMessage")
+    original_text = message.property("text")
+
+    fake_controller.backups._selected_backup_id = "other-backup"
+    fake_controller.backups.changed.emit()
+    qapp.processEvents()
+
+    assert original_text == f"Slot 1\nBackup: backup-id\n\n{consequence}"
+    assert message.property("text") == original_text
 
 
 def test_create_and_restore_controls_reach_their_safe_python_boundaries(qapp, qml_shell, fake_controller) -> None:
