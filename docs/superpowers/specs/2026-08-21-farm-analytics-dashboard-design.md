@@ -163,6 +163,13 @@ class MoneyBalance:
     gold: int | None
 
 @dataclass(frozen=True, slots=True)
+class CumulativeEarnings:
+    copper: int | None
+    silver: int | None
+    gold: int | None
+    provenance: Provenance
+
+@dataclass(frozen=True, slots=True)
 class CropTypeSnapshot:
     crop_id: str
     label: str
@@ -254,6 +261,7 @@ class FarmSnapshot:
     game_mode: int | None
     cozy_option_2: bool | None
     wallet: MoneyBalance | None
+    cumulative_earnings: CumulativeEarnings | None
     crops: tuple[CropTypeSnapshot, ...]
     stock: tuple[StockEntry, ...]
     animals: tuple[AnimalTypeSnapshot, ...]
@@ -382,7 +390,9 @@ Criar models pequenos sobre as tuplas do snapshot/analytics:
 - `AnimalsModel`: `itemId`, `label`, `count`, `buildingKind`;
 - `WorkersModel`: `itemId`, `label`, `count`;
 - `InfrastructureModel`: `kind`, `label`, `count`, `capacityLabel` quando houver;
-- `EconomyBreakdownModel`: `componentId`, `label`, `amountLabel`, `currency`.
+- `EconomyBreakdownModel`: `componentId`, `label`, `amountLabel`, `currency`;
+- `CumulativeEarningsModel`: `currency`, `label`, `amountLabel`,
+  `evidenceLabel`, sempre identificado como acumulado histórico.
 
 Valores são formatados no Python/formatters existentes. QML não interpreta
 `None`, não calcula percentuais e não localiza números manualmente.
@@ -395,7 +405,10 @@ passa a expor:
 - `state`: `idle | loading | ready | partial | unavailable | error`;
 - `selectedSlotLabel`, `lastUpdatedLabel`, `snapshotEvidenceLabel`;
 - `kpisModel`, `alertsModel`, `growthStatesModel`;
-- models de preview para crops, recursos, animais, workers e economia;
+- models de preview para crops, animais, workers e economia;
+- quatro `StockModel` imutáveis e pré-filtrados: `directStockModel`,
+  `warehouseStockModel`, `marketStockModel` e `feedStockModel`;
+- `cumulativeEarningsModel`, separado da carteira e de qualquer métrica por dia;
 - contagens/resumos de capacidade;
 - `unavailableSummary` e `hasUnavailableMetrics`;
 - slots `refresh()` e navegação por intenção, sem filesystem no QML.
@@ -517,7 +530,9 @@ Recurso | Quantidade | Origem | Reserva | Disponível a workers
 ```
 
 Reserva/disponibilidade só existe para Warehouse. Uma chave ausente não produz
-linha zero; zero persistido pode aparecer com indicação explícita.
+linha zero; zero persistido pode aparecer com indicação explícita. Cada filtro
+seleciona um dos quatro `StockModel` pré-filtrados expostos pelo Python; o QML
+não filtra, agrega nem reclassifica linhas em JavaScript.
 
 ### 12.3 Pessoas e animais
 
@@ -532,7 +547,8 @@ gatilho aparece associada ao grupo de prédios, não como consumo/dia.
 - slots de Warehouse 33/38 e Market 33/36 no exemplo real;
 - breakdown auditável do upkeep;
 - buffs ativos e custo associado quando confirmado;
-- acumulados `EARNED` separados da carteira;
+- acumulados `EARNED` do grupo 11, moedas 57/58/59, separados da carteira e
+  rotulados como histórico acumulado — nunca como receita, taxa ou valor `/dia`;
 - lista curta de métricas indisponíveis com motivo.
 
 ## 13. Estados e texto honesto
