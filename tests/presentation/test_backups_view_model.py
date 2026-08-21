@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
@@ -160,7 +161,7 @@ def test_create_uses_selected_slot_and_enqueues_one_refresh(tmp_path: Path, qapp
 
 
 def test_restore_uses_confirmation_snapshot_after_selection_changes(
-    tmp_path: Path, qapp
+    tmp_path: Path, qapp, monkeypatch
 ) -> None:
     backup_root = tmp_path / "backups"
     original = backup_record(backup_root)
@@ -175,6 +176,14 @@ def test_restore_uses_confirmation_snapshot_after_selection_changes(
         tmp_path, loader=loader, restorer=restorer
     )
     vm.selectBackup(record.backup_id)
+    pending_at_submit: list[object] = []
+    submit = runner.submit
+
+    def observe_submit(name: str, work: Callable[[], object]) -> int:
+        pending_at_submit.append(vm._pending_confirmation)
+        return submit(name, work)
+
+    monkeypatch.setattr(runner, "submit", observe_submit)
 
     vm.requestRestore()
     vm.setSelectedSummary(SaveSlotSummary(SaveSlot(2, tmp_path / "save_2"), 1))
@@ -184,6 +193,7 @@ def test_restore_uses_confirmation_snapshot_after_selection_changes(
     vm.confirmAction("restore", record.backup_id)
 
     assert vm._pending_confirmation is None
+    assert pending_at_submit == [None]
     assert len(runner._pending) == 1
     runner.complete_next()
 
@@ -198,7 +208,7 @@ def test_restore_uses_confirmation_snapshot_after_selection_changes(
 
 
 def test_delete_uses_confirmation_snapshot_after_selection_changes(
-    tmp_path: Path, qapp
+    tmp_path: Path, qapp, monkeypatch
 ) -> None:
     backup_root = tmp_path / "backups"
     original = backup_record(backup_root)
@@ -211,6 +221,14 @@ def test_delete_uses_confirmation_snapshot_after_selection_changes(
     deleter = Mock(return_value=delete_success(original.backup_id))
     vm, runner, record = ready_backups_vm(tmp_path, loader=loader, deleter=deleter)
     vm.selectBackup(record.backup_id)
+    pending_at_submit: list[object] = []
+    submit = runner.submit
+
+    def observe_submit(name: str, work: Callable[[], object]) -> int:
+        pending_at_submit.append(vm._pending_confirmation)
+        return submit(name, work)
+
+    monkeypatch.setattr(runner, "submit", observe_submit)
 
     vm.requestDelete()
     vm._selected_backup_id = other.backup_id
@@ -219,6 +237,7 @@ def test_delete_uses_confirmation_snapshot_after_selection_changes(
     vm.confirmAction("delete", record.backup_id)
 
     assert vm._pending_confirmation is None
+    assert pending_at_submit == [None]
     assert len(runner._pending) == 1
     runner.complete_next()
 
