@@ -108,3 +108,27 @@ def test_run_logs_startup_ready_and_shutdown_without_real_event_loop(
         "qml.controller.initialized",
         "qml.application.shutdown exit_code=0",
     ]
+
+
+def test_qml_run_uses_legacy_backup_root_when_runtime_is_not_portable(
+    monkeypatch: pytest.MonkeyPatch,
+    qapp,
+    tmp_path: Path,
+) -> None:
+    import mr_farmboy_manager.qml_application as application
+
+    captured: dict[str, object] = {}
+
+    class Controller:
+        def initialize(self) -> None: pass
+        def shutdown(self) -> bool: return True
+
+    monkeypatch.delenv("MR_FARMBOY_RUNTIME_ROOT", raising=False)
+    monkeypatch.setattr(application, "create_qml_application", lambda: qapp)
+    monkeypatch.setattr(application, "configure_logging", lambda *_: tmp_path / "logs" / "app.log")
+    monkeypatch.setattr(application, "default_backup_root", lambda: tmp_path / "legacy-backups")
+    monkeypatch.setattr(application, "create_engine", lambda _: type("Engine", (), {"rootObjects": lambda self: [object()]})())
+    monkeypatch.setattr(application, "create_controller", lambda **kwargs: (captured.update(kwargs), Controller())[1])
+
+    assert application.run(start_event_loop=False) == 0
+    assert captured["backup_root"] == tmp_path / "legacy-backups"

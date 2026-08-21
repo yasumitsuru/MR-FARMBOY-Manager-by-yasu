@@ -1,56 +1,76 @@
-"""Jornada QML e contratos dos entry points, sempre isolados em ``tmp_path``."""
-
+"""Jornada QML com controller real, limitada integralmente a ``tmp_path``."""
 from __future__ import annotations
-
+import hashlib
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
-
+from PySide6.QtCore import QMetaObject, QObject, QSettings, Qt
 from mr_farmboy_manager.backups import create_backup, delete_backup, restore_backup
 from mr_farmboy_manager.diagnostics import configure_logging
-from mr_farmboy_manager.manual_paths import load_save_slot_summaries
-from mr_farmboy_manager.save_details import inspect_save_slot
+from mr_farmboy_manager.presentation.app_controller import AppController
+from mr_farmboy_manager.presentation.backups_view_model import BackupsViewModel
+from mr_farmboy_manager.presentation.settings_view_model import SettingsViewModel
+from mr_farmboy_manager.settings import QtSettingsStore
+from tests.presentation.fakes import ControlledOperationRunner
 
+def _snapshot_outside(parent: Path, execution_root: Path) -> dict[str, tuple[object, ...]]:
+    snapshot = {}
+    for path in parent.rglob("*"):
+        if path == execution_root or execution_root in path.parents: continue
+        stat = path.lstat(); kind = "dir" if path.is_dir() else "file" if path.is_file() else "other"
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if kind == "file" else ""
+        snapshot[str(path.relative_to(parent))] = (kind, stat.st_mode, stat.st_size, stat.st_mtime_ns, digest)
+    return snapshot
+
+def _find(root: QObject, name: str) -> QObject:
+    found = root.findChild(QObject, name); assert found is not None, name; return found
+
+def _click(item: QObject) -> None:
+    assert QMetaObject.invokeMethod(item, "click", Qt.ConnectionType.DirectConnection)
+
+def _delegate(root: QObject, property_name: str, value: str) -> QObject:
+    found = next((item for item in root.findChildren(QObject) if item.property(property_name) == value), None)
+    assert found is not None, f"delegate {property_name}={value}"; return found
 
 def test_qml_entrypoints_use_qml_runner() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    assert 'mr_farmboy_manager.qml_application:run' in (project_root / 'pyproject.toml').read_text(encoding='utf-8')
-    assert 'from .qml_application import run' in (project_root / 'src/mr_farmboy_manager/__main__.py').read_text(encoding='utf-8')
-    assert 'from mr_farmboy_manager.qml_application import run' in (project_root / 'tools/windows_entrypoint.py').read_text(encoding='utf-8')
+    assert "mr_farmboy_manager.qml_application:run" in (project_root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "from .qml_application import run" in (project_root / "src/mr_farmboy_manager/__main__.py").read_text(encoding="utf-8")
+    assert "from mr_farmboy_manager.qml_application import run" in (project_root / "tools/windows_entrypoint.py").read_text(encoding="utf-8")
 
-
-def test_complete_qml_journey_only_mutates_tmp_path(tmp_path: Path, caplog) -> None:
-    game_data = tmp_path / 'game_data'
-    slot = game_data / 'save_1'
-    slot.mkdir(parents=True)
-    runtime = tmp_path / 'runtime'
-    player = slot / 'player_data.tres'
-    original = '[gd_resource type="Resource" format=3]\ncurrent_tutorial = 1\n'
-    player.write_text(original, encoding='utf-8')
-    (slot / 'island_main_data.tres').write_text(
-        '[gd_resource type="Resource" format=3]\ncurrent_growth_state = 4\nis_planted = true\n',
-        encoding='utf-8',
-    )
-    outside_before = {path: path.stat().st_mtime_ns for path in tmp_path.parent.iterdir() if path != tmp_path}
-    caplog.set_level(logging.INFO, logger='mr_farmboy_manager')
-    log_path = configure_logging(runtime / 'logs')
-
-    loaded = load_save_slot_summaries(str(game_data))
-    assert loaded.is_success and len(loaded.summaries) == 1
-    summary = loaded.summaries[0]
-    assert inspect_save_slot(summary).inspected_file_count == 2
-    created = create_backup(summary.slot, game_data, runtime / 'backups', created_at=datetime(2026, 8, 10, tzinfo=UTC), suffix='a' * 32)
-    assert created.is_success and created.backup is not None
-    player.write_text(original.replace(' = 1', ' = 9'), encoding='utf-8')
-    restored = restore_backup(summary.slot, game_data, runtime / 'backups', created.backup.backup_id, confirmed=True)
-    assert restored.is_success and player.read_text(encoding='utf-8') == original
-    deleted = delete_backup(runtime / 'backups', created.backup.backup_id, confirmed=True)
-    assert deleted.is_success
-    refreshed = load_save_slot_summaries(str(game_data))
-    assert refreshed.is_success and refreshed.summaries[0].slot.path == slot
-    logging.getLogger('mr_farmboy_manager').info('qml.e2e.completed slot=1')
-    for handler in logging.getLogger('mr_farmboy_manager').handlers:
-        handler.flush()
-    assert log_path is not None and log_path.exists()
-    assert str(tmp_path) not in log_path.read_text(encoding='utf-8')
-    assert outside_before == {path: path.stat().st_mtime_ns for path in outside_before}
+def test_complete_qml_journey_only_mutates_tmp_path(tmp_path: Path, qapp) -> None:
+    from mr_farmboy_manager.qml_application import create_engine
+    game_data, runtime = tmp_path / "game_data", tmp_path / "runtime"; slot = game_data / "save_1"; slot.mkdir(parents=True)
+    player = slot / "player_data.tres"; original = '[gd_resource type="Resource" format=3]\ncurrent_tutorial = 1\n'; player.write_text(original, encoding="utf-8")
+    (slot / "island_main_data.tres").write_text('[gd_resource type="Resource" format=3]\ncurrent_growth_state = 4\nis_planted = true\n', encoding="utf-8")
+    external_before, received_paths = _snapshot_outside(tmp_path.parent, tmp_path), []
+    def inside(*values):
+        for value in values:
+            path = Path(value).resolve(strict=False); received_paths.append(path); assert path.is_relative_to(tmp_path)
+    def creator(slot_value, active_root, backup_root): inside(slot_value.path, active_root, backup_root); return create_backup(slot_value, active_root, backup_root)
+    def restorer(slot_value, active_root, backup_root, backup_id, *, confirmed): inside(slot_value.path, active_root, backup_root); return restore_backup(slot_value, active_root, backup_root, backup_id, confirmed=confirmed)
+    def deleter(backup_root, backup_id, *, confirmed): inside(backup_root); return delete_backup(backup_root, backup_id, confirmed=confirmed)
+    runner = ControlledOperationRunner(); settings_path = runtime / "settings.ini"
+    settings = SettingsViewModel(QtSettingsStore(QSettings(str(settings_path), QSettings.Format.IniFormat)), runtime / "backups")
+    backups = BackupsViewModel(runner, runtime / "backups", creator=creator, restorer=restorer, deleter=deleter)
+    controller = AppController(settings=settings, backups=backups, runner=runner, log_path=runtime / "logs" / "mr-farmboy-manager.log"); controller._recompute_dashboard = lambda: None
+    log_path = configure_logging(runtime / "logs"); assert log_path is not None and log_path.is_relative_to(tmp_path)
+    engine = create_engine(controller); root = engine.rootObjects()[0]
+    try:
+        controller.initialize(); runner.complete_next(); controller.saves.changed.disconnect(controller._child_state_changed); _find(root, "appShell").setProperty("currentIndex", 3)
+        field = _find(root, "saveRootField"); field.setProperty("text", str(game_data)); assert QMetaObject.invokeMethod(field, "editingFinished", Qt.ConnectionType.DirectConnection)
+        _click(_find(root, "saveSettingsButton")); runner.complete_next(); qapp.processEvents(); assert _find(root, "saveRootMessage").property("text") == "Diretório de saves válido."
+        _find(root, "appShell").setProperty("currentIndex", 1); qapp.processEvents(); controller.saves.selectSlot("save_1"); runner.complete_next(); qapp.processEvents(); assert controller.saves.details.inspectedFileCount == 2 and _find(root, "saveDetailRecordCount").property("text") == "0"
+        _find(root, "appShell").setProperty("currentIndex", 2); qapp.processEvents(); _click(_find(root, "createBackupButton")); runner.complete_next(); runner.complete_next(); qapp.processEvents()
+        backup_id = controller.backups.backupsModel.index(0, 0).data(257); controller.backups.selectBackup(backup_id); player.write_text(original.replace(" = 1", " = 9"), encoding="utf-8")
+        assert controller.backups.canRestore; _click(_find(root, "restoreBackupButton")); _click(_find(root, "confirmDialogConfirmButton")); runner.complete_next();
+        if runner._pending: runner.complete_next()
+        qapp.processEvents(); assert player.read_text(encoding="utf-8") == original
+        controller.backups.selectBackup(backup_id); _click(_find(root, "deleteBackupButton")); _click(_find(root, "confirmDialogConfirmButton")); runner.complete_next()
+        if runner._pending: runner.complete_next()
+        qapp.processEvents(); controller.saves.refresh(); runner.complete_next(); qapp.processEvents()
+        logging.getLogger("mr_farmboy_manager").info("qml.e2e.completed slot=1")
+        for handler in logging.getLogger("mr_farmboy_manager").handlers: handler.flush()
+        assert str(tmp_path) not in log_path.read_text(encoding="utf-8"); assert received_paths
+    finally:
+        assert controller.shutdown() is True; engine.deleteLater()
+    assert _snapshot_outside(tmp_path.parent, tmp_path) == external_before

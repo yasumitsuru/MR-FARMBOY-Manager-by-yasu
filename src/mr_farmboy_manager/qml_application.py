@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 from mr_farmboy_manager.presentation.app_controller import AppController
 from mr_farmboy_manager.application import (
     create_application,
+    default_backup_root,
     runtime_root_from_environment,
 )
 from mr_farmboy_manager.diagnostics import configure_logging
@@ -60,7 +61,7 @@ def run(*, start_event_loop: bool = True) -> int:
     log_path = configure_logging(runtime_root / "logs" if runtime_root is not None else None)
     if runtime_root is None:
         settings_store = QtSettingsStore()
-        backup_root = None
+        backup_root = default_backup_root()
     else:
         settings_store = QtSettingsStore(
             QSettings(str(runtime_root / "settings.ini"), QSettings.Format.IniFormat)

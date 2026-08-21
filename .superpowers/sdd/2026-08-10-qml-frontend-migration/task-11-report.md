@@ -38,3 +38,14 @@
 
 - O pytest emite o warning preexistente de cache (`.pytest_cache`); não afeta os
   772 testes aprovados.
+
+## Fix round 1
+
+- RED confirmou que o bootstrap QML não expunha nem usava o root de backup
+  legado; GREEN usa `default_backup_root()` fora do runtime portátil.
+- O E2E agora sobe engine QML e `AppController` reais com runner manual,
+  settings/backups/logs injetados em `tmp_path`, confirma restore/delete pelo
+  diálogo QML e verifica shutdown.
+- O isolamento captura recursivamente a área externa à árvore da execução
+  (tipo, metadados e hash), além de validar em wrappers que cada fronteira
+  mutável recebe somente caminhos dentro de `tmp_path`.
