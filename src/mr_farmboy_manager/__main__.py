@@ -1,7 +1,7 @@
 """Entrada de ponto principal para execução com python -m mr_farmboy_manager."""
 
 import sys
-from .application import run
+from .qml_application import run
 
 
 def main() -> int:

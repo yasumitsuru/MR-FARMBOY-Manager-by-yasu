@@ -36,11 +36,11 @@ def test_run_returns_nonzero_when_qml_creates_no_root(monkeypatch, qapp, fake_co
     engine = Mock(spec=QQmlApplicationEngine)
     engine.rootObjects.return_value = []
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_qml_application", lambda: qapp)
-    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda: fake_controller)
+    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda **_kwargs: fake_controller)
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_engine", lambda controller: engine)
 
     assert run(start_event_loop=False) == 1
-    assert fake_controller.initialize_calls == 1
+    assert fake_controller.initialize_calls == 0
     assert fake_controller.shutdown_calls == 1
 
 
@@ -48,7 +48,7 @@ def test_run_shuts_down_controller_after_noninteractive_start(monkeypatch, qapp,
     engine = Mock(spec=QQmlApplicationEngine)
     engine.rootObjects.return_value = [object()]
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_qml_application", lambda: qapp)
-    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda: fake_controller)
+    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda **_kwargs: fake_controller)
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_engine", lambda controller: engine)
 
     assert run(start_event_loop=False) == 0
@@ -58,7 +58,7 @@ def test_run_shuts_down_controller_after_noninteractive_start(monkeypatch, qapp,
 
 def test_run_shuts_down_controller_when_initialize_raises(monkeypatch, qapp, fake_controller) -> None:
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_qml_application", lambda: qapp)
-    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda: fake_controller)
+    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda **_kwargs: fake_controller)
     monkeypatch.setattr(fake_controller, "initialize", lambda: (_ for _ in ()).throw(RuntimeError("init")))
 
     with pytest.raises(RuntimeError, match="init"):
@@ -69,7 +69,7 @@ def test_run_shuts_down_controller_when_initialize_raises(monkeypatch, qapp, fak
 
 def test_run_shuts_down_controller_when_engine_creation_raises(monkeypatch, qapp, fake_controller) -> None:
     monkeypatch.setattr("mr_farmboy_manager.qml_application.create_qml_application", lambda: qapp)
-    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda: fake_controller)
+    monkeypatch.setattr("mr_farmboy_manager.qml_application.create_controller", lambda **_kwargs: fake_controller)
     monkeypatch.setattr(
         "mr_farmboy_manager.qml_application.create_engine",
         lambda _controller: (_ for _ in ()).throw(RuntimeError("engine")),
@@ -78,7 +78,7 @@ def test_run_shuts_down_controller_when_engine_creation_raises(monkeypatch, qapp
     with pytest.raises(RuntimeError, match="engine"):
         run(start_event_loop=False)
 
-    assert fake_controller.initialize_calls == 1
+    assert fake_controller.initialize_calls == 0
     assert fake_controller.shutdown_calls == 1
 
 

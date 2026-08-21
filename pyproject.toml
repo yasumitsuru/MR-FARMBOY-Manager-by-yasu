@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-mr-farmboy-manager = "mr_farmboy_manager.application:run"
+mr-farmboy-manager = "mr_farmboy_manager.qml_application:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

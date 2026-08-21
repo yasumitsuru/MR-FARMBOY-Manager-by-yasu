@@ -38,7 +38,7 @@ def test_run_logs_startup_ready_and_shutdown_without_real_event_loop(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    import mr_farmboy_manager.application as application
+    import mr_farmboy_manager.qml_application as application
 
     events: list[str] = []
 
@@ -47,9 +47,17 @@ def test_run_logs_startup_ready_and_shutdown_without_real_event_loop(
             events.append("exec")
             return 0
 
-    class FakeWindow:
-        def show(self) -> None:
-            events.append("show")
+    class FakeController:
+        def initialize(self) -> None:
+            events.append("initialize")
+
+        def shutdown(self) -> bool:
+            events.append("shutdown")
+            return True
+
+    class FakeEngine:
+        def rootObjects(self):
+            return [object()]
 
     runtime_root = tmp_path / "runtime"
     captured: dict[str, object] = {}
@@ -66,34 +74,37 @@ def test_run_logs_startup_ready_and_shutdown_without_real_event_loop(
         captured["settings_filename"] = qsettings.fileName()
         return object()
 
-    def create_window(_app, *, settings_store, backup_root):
+    def create_controller(*, settings_store, backup_root, log_path):
         captured["settings_store"] = settings_store
         captured["backup_root"] = backup_root
-        return FakeWindow()
+        captured["log_path"] = log_path
+        return FakeController()
 
     monkeypatch.setenv("MR_FARMBOY_RUNTIME_ROOT", str(runtime_root))
     monkeypatch.setattr(application, "configure_logging", configure_logging)
-    monkeypatch.setattr(application, "create_application", create_application)
+    monkeypatch.setattr(application, "create_qml_application", create_application)
     monkeypatch.setattr(
         application,
-        "create_main_window",
-        create_window,
+        "create_controller",
+        create_controller,
     )
+    monkeypatch.setattr(application, "create_engine", lambda _controller: FakeEngine())
     monkeypatch.setattr(application, "QtSettingsStore", settings_store)
-    caplog.set_level(logging.INFO, logger="mr_farmboy_manager.application")
+    caplog.set_level(logging.INFO, logger="mr_farmboy_manager.qml_application")
 
-    assert application.run() == 0
+    assert application.run(start_event_loop=False) == 0
     assert events == [
         "create_application",
         "configure_logging",
-        "show",
-        "exec",
+        "initialize",
+        "shutdown",
     ]
     assert captured["log_directory"] == runtime_root / "logs"
     assert Path(str(captured["settings_filename"])) == runtime_root / "settings.ini"
     assert captured["backup_root"] == runtime_root / "backups"
     assert [record.getMessage() for record in caplog.records] == [
-        "application.startup",
-        "application.ready",
-        "application.shutdown exit_code=0",
+        "qml.engine.started",
+        "qml.load.completed",
+        "qml.controller.initialized",
+        "qml.application.shutdown exit_code=0",
     ]
