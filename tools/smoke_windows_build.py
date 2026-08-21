@@ -9,21 +9,32 @@ import tempfile
 import time
 from pathlib import Path
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from tools.build_windows import PROJECT_ROOT, artifact_path
 
 
-READY_EVENT = "application.ready"
+QML_RESOURCE_LOAD_EVENT = "qml.load.completed"
+READY_EVENT = "qml.controller.initialized"
 LOG_FILENAME = "mr-farmboy-manager.log"
 
 
-def _ready_was_logged(local_app_data: Path) -> bool:
-    for log_path in local_app_data.rglob(LOG_FILENAME):
+def _required_events_were_logged(runtime_root: Path) -> bool:
+    logged_events: set[str] = set()
+    for log_path in runtime_root.rglob(LOG_FILENAME):
         try:
-            if READY_EVENT in log_path.read_text(encoding="utf-8"):
-                return True
+            contents = log_path.read_text(encoding="utf-8")
         except OSError:
             continue
-    return False
+        for event in (QML_RESOURCE_LOAD_EVENT, READY_EVENT):
+            if event in contents:
+                logged_events.add(event)
+    return logged_events == {QML_RESOURCE_LOAD_EVENT, READY_EVENT}
+
+
+def _has_files(directory: Path) -> bool:
+    return any(directory.iterdir())
 
 
 def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
@@ -34,6 +45,7 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
         temporary_root = Path(temporary)
         app_data = temporary_root / "appdata"
         local_app_data = temporary_root / "localappdata"
+        runtime_root = temporary_root / "runtime"
         app_data.mkdir()
         local_app_data.mkdir()
         environment = os.environ.copy()
@@ -41,7 +53,7 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
             {
                 "APPDATA": str(app_data),
                 "LOCALAPPDATA": str(local_app_data),
-                "MR_FARMBOY_RUNTIME_ROOT": str(temporary_root / "runtime"),
+                "MR_FARMBOY_RUNTIME_ROOT": str(runtime_root),
                 "QT_QPA_PLATFORM": "offscreen",
             }
         )
@@ -52,6 +64,7 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        ready = False
         try:
             deadline = time.monotonic() + timeout_seconds
             while time.monotonic() < deadline:
@@ -60,10 +73,12 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
                     raise RuntimeError(
                         f"O executável encerrou antes de ficar pronto (código {exit_code})."
                     )
-                if _ready_was_logged(temporary_root):
-                    return
+                if _required_events_were_logged(runtime_root):
+                    ready = True
+                    break
                 time.sleep(0.1)
-            raise TimeoutError("O executável não registrou prontidão no prazo.")
+            if not ready:
+                raise TimeoutError("O executável não registrou prontidão no prazo.")
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -72,6 +87,10 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=5)
+        if process.poll() is None:
+            raise RuntimeError("O executável permaneceu em execução após o smoke test.")
+        if _has_files(app_data) or _has_files(local_app_data):
+            raise RuntimeError("O executável escreveu fora de MR_FARMBOY_RUNTIME_ROOT.")
 
 
 def main(argv: list[str] | None = None) -> int:
