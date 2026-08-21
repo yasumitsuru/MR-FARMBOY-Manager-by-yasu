@@ -23,6 +23,7 @@ Item {
             spacing: AppTheme.Theme.space24
 
             SectionHeader {
+                objectName: "dashboardHeader"
                 Layout.fillWidth: true
                 title: "Caderno do cultivo"
                 subtitle: dashboard && dashboard.configurationState === "valid" ? "Leitura atual do campo selecionado" : "Defina a origem dos saves para iniciar a leitura"

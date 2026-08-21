@@ -13,6 +13,8 @@ QtObject {
     readonly property color success: "#59C58B"
     readonly property color warning: "#E5B95C"
     readonly property color error: "#ED776D"
+    readonly property color errorStrong: "#C95A54"
+    readonly property color errorPressed: "#A94742"
     readonly property color textPrimary: "#F2F6F3"
     readonly property color textSecondary: "#A9BBB0"
     readonly property color textMuted: "#74877C"

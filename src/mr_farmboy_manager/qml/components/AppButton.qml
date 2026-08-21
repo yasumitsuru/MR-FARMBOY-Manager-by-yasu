@@ -16,13 +16,13 @@ Button {
         radius: AppTheme.Theme.radiusControl
         border.width: AppTheme.Theme.borderWidth
         border.color: parent.activeFocus ? AppTheme.Theme.focus : (parent.variant === "primary" ? AppTheme.Theme.accent : (parent.variant === "danger" ? AppTheme.Theme.error : AppTheme.Theme.border))
-        color: parent.variant === "primary" ? (parent.down ? AppTheme.Theme.accentStrong : AppTheme.Theme.accent) : (parent.hovered ? AppTheme.Theme.surfaceRaised : AppTheme.Theme.surface)
+        color: parent.variant === "primary" ? (parent.down ? AppTheme.Theme.accentStrong : AppTheme.Theme.accent) : (parent.variant === "danger" ? (parent.down ? AppTheme.Theme.errorPressed : (parent.hovered ? AppTheme.Theme.errorStrong : AppTheme.Theme.error)) : (parent.hovered ? AppTheme.Theme.surfaceRaised : AppTheme.Theme.surface))
         opacity: parent.enabled ? 1 : 0.55
         Behavior on color { ColorAnimation { duration: AppTheme.Theme.motionFast } }
     }
     contentItem: Text {
         text: parent.text
-        color: parent.variant === "primary" ? AppTheme.Theme.background : (parent.variant === "danger" ? AppTheme.Theme.error : AppTheme.Theme.textPrimary)
+        color: parent.variant === "primary" || parent.variant === "danger" ? AppTheme.Theme.background : AppTheme.Theme.textPrimary
         font.family: AppTheme.Theme.bodyFont
         font.weight: AppTheme.Theme.weightSemibold
         font.pixelSize: AppTheme.Theme.typeBody

@@ -34,6 +34,7 @@ Item {
                     anchors.fill: parent
                     spacing: AppTheme.Theme.space12
                     SectionHeader {
+                        objectName: "savesLedgerHeader"
                         Layout.fillWidth: true
                         title: "Ledger de saves"
                         subtitle: "Selecione um slot para consultar sua evidência"

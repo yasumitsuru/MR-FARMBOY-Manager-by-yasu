@@ -11,7 +11,8 @@ Item {
     property var diagnostics: controller ? controller.diagnostics : null
     property var shell
     readonly property bool narrowLayout: width < 700
-    readonly property string diagnosticText: diagnostics && diagnostics.events.length > 0 ? diagnostics.events : (diagnostics && diagnostics.statusMessage.length > 0 ? diagnostics.statusMessage : "Nenhum evento de diagnóstico disponível.")
+    readonly property bool hasDiagnosticEvents: diagnostics && diagnostics.events.length > 0
+    readonly property string diagnosticText: hasDiagnosticEvents ? diagnostics.events : "Nenhum evento de diagnóstico disponível."
 
     ScrollView {
         id: diagnosticsScroll
@@ -51,13 +52,13 @@ Item {
                         property bool wrapsText: true
                         Layout.fillWidth: true
                         text: page.diagnosticText
-                        color: diagnostics && diagnostics.statusMessage.length > 0 && (!diagnostics.events || diagnostics.events.length === 0) ? AppTheme.Theme.error : AppTheme.Theme.textPrimary
+                        color: AppTheme.Theme.textPrimary
                         font.family: AppTheme.Theme.utilityFont
                         font.pixelSize: AppTheme.Theme.typeMeta
                         wrapMode: TextEdit.WrapAnywhere
                         selectByMouse: true
                     }
-                    Text { objectName: "diagnosticsStatus"; Layout.fillWidth: true; visible: diagnostics && diagnostics.statusMessage.length > 0; text: diagnostics ? diagnostics.statusMessage : ""; color: AppTheme.Theme.error; font.family: AppTheme.Theme.bodyFont; wrapMode: Text.WordWrap }
+                    Text { objectName: "diagnosticsStatus"; Layout.fillWidth: true; visible: diagnostics && diagnostics.statusMessage.length > 0; text: diagnostics ? diagnostics.statusMessage : ""; color: page.hasDiagnosticEvents ? AppTheme.Theme.success : AppTheme.Theme.error; font.family: AppTheme.Theme.bodyFont; wrapMode: Text.WordWrap }
                     RowLayout {
                         Layout.fillWidth: true
                         AppButton { objectName: "copyDiagnosticButton"; text: "Copiar diagnóstico"; onClicked: if (diagnostics) diagnostics.copyDiagnostic() }

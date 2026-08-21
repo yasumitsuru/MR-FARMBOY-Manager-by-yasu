@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QObject, QMetaObject, Qt, QUrl
+from PySide6.QtGui import QColor
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 
 
@@ -90,7 +91,11 @@ def test_diagnostics_empty_error_and_readable_event_text(qapp, qml_shell, fake_c
     _show(qml_shell, 4)
     fake_controller.diagnostics.set_fixture_events("", "Log indisponível.")
     qapp.processEvents()
-    assert "indisponível" in _find(qml_shell, "diagnosticsEvents").property("text").lower()
+    events = _find(qml_shell, "diagnosticsEvents")
+    status = _find(qml_shell, "diagnosticsStatus")
+    assert "indisponível" not in events.property("text").lower()
+    assert "indisponível" in status.property("text").lower()
+    assert events.property("color") != status.property("color")
 
     fake_controller.diagnostics.set_fixture_events("evento longo\ncom detalhes", "Não foi possível ler o log.")
     qapp.processEvents()
@@ -98,6 +103,14 @@ def test_diagnostics_empty_error_and_readable_event_text(qapp, qml_shell, fake_c
     assert events.property("selectByMouse") is True
     assert events.property("wrapsText") is True
     assert "não foi possível" in _find(qml_shell, "diagnosticsStatus").property("text").lower()
+
+
+def test_diagnostics_success_status_is_not_rendered_as_an_error(qapp, qml_shell, fake_controller) -> None:
+    _show(qml_shell, 4)
+    fake_controller.diagnostics.set_fixture_events("evento concluído", "Eventos atualizados.")
+    qapp.processEvents()
+
+    assert _find(qml_shell, "diagnosticsStatus").property("color") == QColor("#59C58B")
 
 
 @pytest.mark.parametrize(
