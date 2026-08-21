@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -18,6 +20,7 @@ from tools.build_windows import PROJECT_ROOT, artifact_path
 QML_RESOURCE_LOAD_EVENT = "qml.load.completed"
 READY_EVENT = "qml.controller.initialized"
 LOG_FILENAME = "mr-farmboy-manager.log"
+FILE_ATTRIBUTE_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
 def _required_events_were_logged(runtime_root: Path) -> bool:
@@ -33,28 +36,84 @@ def _required_events_were_logged(runtime_root: Path) -> bool:
     return logged_events == {QML_RESOURCE_LOAD_EVENT, READY_EVENT}
 
 
-def _has_files(directory: Path) -> bool:
-    return any(path.is_file() for path in directory.rglob("*"))
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _file_snapshot(directory: Path) -> dict[Path, tuple[int, int]]:
-    snapshot: dict[Path, tuple[int, int]] = {}
-    for path in directory.rglob("*"):
+def _tree_snapshot(directory: Path) -> dict[Path, tuple[object, ...]]:
+    """Registra a árvore sem atravessar symlinks, junctions ou reparse points."""
+    snapshot: dict[Path, tuple[object, ...]] = {}
+
+    def visit(current: Path, relative_root: Path) -> None:
         try:
-            if path.is_file():
-                metadata = path.stat()
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    relative_path = relative_root / entry.name
+                    try:
+                        metadata = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    attributes = getattr(metadata, "st_file_attributes", 0)
+                    is_reparse = stat.S_ISLNK(metadata.st_mode) or bool(
+                        attributes & FILE_ATTRIBUTE_REPARSE_POINT
+                    )
+                    if is_reparse:
+                        try:
+                            target = os.readlink(path)
+                        except OSError:
+                            target = ""
+                        snapshot[relative_path] = (
+                            "reparse",
+                            metadata.st_mode,
+                            metadata.st_size,
+                            metadata.st_mtime_ns,
+                            target,
+                        )
+                    elif stat.S_ISDIR(metadata.st_mode):
+                        snapshot[relative_path] = (
+                            "directory",
+                            metadata.st_mode,
+                            metadata.st_mtime_ns,
+                        )
+                        visit(path, relative_path)
+                    elif stat.S_ISREG(metadata.st_mode):
+                        try:
+                            digest = _file_digest(path)
+                        except OSError:
+                            continue
+                        snapshot[relative_path] = (
+                            "file",
+                            metadata.st_mode,
+                            metadata.st_size,
+                            metadata.st_mtime_ns,
+                            digest,
+                        )
+                    else:
+                        snapshot[relative_path] = (
+                            "other",
+                            metadata.st_mode,
+                            metadata.st_size,
+                            metadata.st_mtime_ns,
+                        )
         except OSError:
-            continue
-        else:
-            snapshot[path.relative_to(directory)] = (metadata.st_size, metadata.st_mtime_ns)
+            return
+
+    visit(directory, Path())
     return snapshot
 
 
-def _changed_files(
-    before: dict[Path, tuple[int, int]], after: dict[Path, tuple[int, int]]
+def _changed_entries(
+    before: dict[Path, tuple[object, ...]], after: dict[Path, tuple[object, ...]]
 ) -> list[Path]:
     return sorted(
-        path for path, metadata in after.items() if before.get(path) != metadata
+        path
+        for path in before.keys() | after.keys()
+        if before.get(path) != after.get(path)
     )
 
 
@@ -84,7 +143,7 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
                 **{name: str(directory) for name, directory in isolated_roots.items()},
             }
         )
-        cwd_before = _file_snapshot(executable.parent)
+        cwd_before = _tree_snapshot(executable.parent)
         process = subprocess.Popen(
             [str(executable)],
             cwd=executable.parent,
@@ -118,15 +177,18 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
         if process.poll() is None:
             raise RuntimeError("O executável permaneceu em execução após o smoke test.")
         unexpected_boundaries = [
-            name for name, directory in isolated_roots.items() if _has_files(directory)
+            name for name, directory in isolated_roots.items() if _tree_snapshot(directory)
         ]
-        if _changed_files(cwd_before, _file_snapshot(executable.parent)):
+        cwd_changes = _changed_entries(cwd_before, _tree_snapshot(executable.parent))
+        if cwd_changes:
             unexpected_boundaries.append("cwd")
         if unexpected_boundaries:
             boundaries = ", ".join(unexpected_boundaries)
+            cwd_details = ", ".join(str(path) for path in cwd_changes)
             raise RuntimeError(
                 "O executável escreveu em fronteiras isoladas fora de "
-                f"MR_FARMBOY_RUNTIME_ROOT: {boundaries}."
+                "MR_FARMBOY_RUNTIME_ROOT: "
+                f"{boundaries}. Cwd alterado: {cwd_details}."
             )
 
 

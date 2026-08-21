@@ -2,8 +2,10 @@
 
 from pathlib import Path
 import runpy
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -114,7 +116,7 @@ def test_smoke_rejects_writes_to_isolated_temp_root(
             )
             temp_root = runtime_root.parent / "temp"
             temp_root.mkdir(exist_ok=True)
-            (temp_root / "unexpected-write.txt").write_text("written", encoding="utf-8")
+            (temp_root / "unexpected-empty-directory").mkdir()
             self.running = True
 
         def poll(self):
@@ -197,6 +199,49 @@ def test_smoke_disables_qml_disk_cache(monkeypatch, tmp_path: Path) -> None:
     smoke.smoke_test(executable)
 
     assert captured_environment["QML_DISABLE_DISK_CACHE"] == "1"
+
+
+def test_tree_snapshot_records_reparse_point_without_descending(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import tools.smoke_windows_build as smoke
+
+    link_path = tmp_path / "link"
+    metadata = SimpleNamespace(
+        st_mode=stat.S_IFDIR,
+        st_size=0,
+        st_mtime_ns=1,
+        st_file_attributes=smoke.FILE_ATTRIBUTE_REPARSE_POINT,
+    )
+
+    class FakeEntry:
+        name = "link"
+        path = str(link_path)
+
+        def stat(self, *, follow_symlinks: bool):
+            assert not follow_symlinks
+            return metadata
+
+    class FakeScandir:
+        def __enter__(self):
+            return iter([FakeEntry()])
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    scanned: list[Path] = []
+
+    def fake_scandir(path):
+        scanned.append(Path(path))
+        return FakeScandir()
+
+    monkeypatch.setattr(smoke.os, "scandir", fake_scandir)
+    monkeypatch.setattr(smoke.os, "readlink", lambda _path: "target")
+
+    snapshot = smoke._tree_snapshot(tmp_path)
+
+    assert snapshot[Path("link")][0] == "reparse"
+    assert scanned == [tmp_path]
 
 
 def test_smoke_script_can_import_its_build_helper() -> None:
