@@ -44,9 +44,47 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _tree_snapshot(directory: Path) -> dict[Path, tuple[object, ...]]:
+def _snapshot_failure(operation: str, path: Path, error: OSError) -> RuntimeError:
+    return RuntimeError(f"Falha ao {operation} em {path}: {error}")
+
+
+def _is_reparse(metadata: os.stat_result) -> bool:
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        attributes & FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
+def _directory_metadata(
+    metadata: os.stat_result, *, include_mtime: bool
+) -> tuple[object, ...]:
+    values: tuple[object, ...] = (
+        metadata.st_mode,
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_ctime_ns,
+    )
+    return values + ((metadata.st_mtime_ns,) if include_mtime else ())
+
+
+def _tree_snapshot(
+    directory: Path, *, include_directory_mtime: bool = True
+) -> dict[Path, tuple[object, ...]]:
     """Registra a árvore sem atravessar symlinks, junctions ou reparse points."""
     snapshot: dict[Path, tuple[object, ...]] = {}
+
+    try:
+        root_metadata = directory.lstat()
+    except OSError as error:
+        raise _snapshot_failure("executar lstat da raiz", directory, error) from error
+    if _is_reparse(root_metadata):
+        raise RuntimeError(f"A raiz do snapshot é um reparse point: {directory}")
+    if not stat.S_ISDIR(root_metadata.st_mode):
+        raise RuntimeError(f"A raiz do snapshot não é um diretório: {directory}")
+    snapshot[Path(".")] = (
+        "directory",
+        *_directory_metadata(root_metadata, include_mtime=include_directory_mtime),
+    )
 
     def visit(current: Path, relative_root: Path) -> None:
         try:
@@ -56,40 +94,49 @@ def _tree_snapshot(directory: Path) -> dict[Path, tuple[object, ...]]:
                     relative_path = relative_root / entry.name
                     try:
                         metadata = entry.stat(follow_symlinks=False)
-                    except OSError:
-                        continue
-                    attributes = getattr(metadata, "st_file_attributes", 0)
-                    is_reparse = stat.S_ISLNK(metadata.st_mode) or bool(
-                        attributes & FILE_ATTRIBUTE_REPARSE_POINT
-                    )
-                    if is_reparse:
+                    except OSError as error:
+                        raise _snapshot_failure(
+                            "executar stat da entrada", path, error
+                        ) from error
+                    if _is_reparse(metadata):
                         try:
                             target = os.readlink(path)
-                        except OSError:
-                            target = ""
+                        except OSError as error:
+                            raise _snapshot_failure(
+                                "ler reparse point", path, error
+                            ) from error
                         snapshot[relative_path] = (
                             "reparse",
                             metadata.st_mode,
+                            metadata.st_dev,
+                            metadata.st_ino,
                             metadata.st_size,
+                            metadata.st_ctime_ns,
                             metadata.st_mtime_ns,
                             target,
                         )
                     elif stat.S_ISDIR(metadata.st_mode):
                         snapshot[relative_path] = (
                             "directory",
-                            metadata.st_mode,
-                            metadata.st_mtime_ns,
+                            *_directory_metadata(
+                                metadata, include_mtime=include_directory_mtime
+                            ),
                         )
                         visit(path, relative_path)
                     elif stat.S_ISREG(metadata.st_mode):
                         try:
                             digest = _file_digest(path)
-                        except OSError:
-                            continue
+                        except OSError as error:
+                            raise _snapshot_failure(
+                                "calcular digest", path, error
+                            ) from error
                         snapshot[relative_path] = (
                             "file",
                             metadata.st_mode,
+                            metadata.st_dev,
+                            metadata.st_ino,
                             metadata.st_size,
+                            metadata.st_ctime_ns,
                             metadata.st_mtime_ns,
                             digest,
                         )
@@ -97,11 +144,14 @@ def _tree_snapshot(directory: Path) -> dict[Path, tuple[object, ...]]:
                         snapshot[relative_path] = (
                             "other",
                             metadata.st_mode,
+                            metadata.st_dev,
+                            metadata.st_ino,
                             metadata.st_size,
+                            metadata.st_ctime_ns,
                             metadata.st_mtime_ns,
                         )
-        except OSError:
-            return
+        except OSError as error:
+            raise _snapshot_failure("executar scandir", current, error) from error
 
     visit(directory, Path())
     return snapshot
@@ -143,7 +193,10 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
                 **{name: str(directory) for name, directory in isolated_roots.items()},
             }
         )
-        cwd_before = _tree_snapshot(executable.parent)
+        isolated_before = {
+            name: _tree_snapshot(directory) for name, directory in isolated_roots.items()
+        }
+        cwd_before = _tree_snapshot(executable.parent, include_directory_mtime=False)
         process = subprocess.Popen(
             [str(executable)],
             cwd=executable.parent,
@@ -177,9 +230,14 @@ def smoke_test(executable: Path, timeout_seconds: float = 20.0) -> None:
         if process.poll() is None:
             raise RuntimeError("O executável permaneceu em execução após o smoke test.")
         unexpected_boundaries = [
-            name for name, directory in isolated_roots.items() if _tree_snapshot(directory)
+            name
+            for name, directory in isolated_roots.items()
+            if _changed_entries(isolated_before[name], _tree_snapshot(directory))
         ]
-        cwd_changes = _changed_entries(cwd_before, _tree_snapshot(executable.parent))
+        cwd_changes = _changed_entries(
+            cwd_before,
+            _tree_snapshot(executable.parent, include_directory_mtime=False),
+        )
         if cwd_changes:
             unexpected_boundaries.append("cwd")
         if unexpected_boundaries:

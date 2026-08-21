@@ -211,6 +211,9 @@ def test_tree_snapshot_records_reparse_point_without_descending(
         st_mode=stat.S_IFDIR,
         st_size=0,
         st_mtime_ns=1,
+        st_ctime_ns=1,
+        st_ino=1,
+        st_dev=1,
         st_file_attributes=smoke.FILE_ATTRIBUTE_REPARSE_POINT,
     )
 
@@ -242,6 +245,151 @@ def test_tree_snapshot_records_reparse_point_without_descending(
 
     assert snapshot[Path("link")][0] == "reparse"
     assert scanned == [tmp_path]
+
+
+@pytest.mark.parametrize("mutation", ["replace_root", "transient_child"])
+def test_smoke_rejects_isolated_root_metadata_mutations(
+    monkeypatch, tmp_path: Path, mutation: str
+) -> None:
+    import tools.smoke_windows_build as smoke
+
+    executable = tmp_path / "MR-FARMBOY-Manager.exe"
+    executable.touch()
+
+    class FakeProcess:
+        def __init__(self, _command, *, env, **_kwargs) -> None:
+            runtime_root = Path(env["MR_FARMBOY_RUNTIME_ROOT"])
+            log_path = runtime_root / "logs" / smoke.LOG_FILENAME
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "qml.load.completed\nqml.controller.initialized\n", encoding="utf-8"
+            )
+            temp_root = Path(env["TEMP"])
+            if mutation == "replace_root":
+                temp_root.rmdir()
+                temp_root.mkdir()
+            else:
+                transient = temp_root / "transient"
+                transient.mkdir()
+                transient.rmdir()
+            self.running = True
+
+        def poll(self):
+            return None if self.running else 0
+
+        def terminate(self) -> None:
+            self.running = False
+
+        def wait(self, timeout: float) -> int:
+            self.running = False
+            return 0
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", FakeProcess)
+
+    with pytest.raises(RuntimeError, match="TEMP"):
+        smoke.smoke_test(executable)
+
+
+def test_tree_snapshot_fails_closed_when_scandir_fails(monkeypatch, tmp_path: Path) -> None:
+    import tools.smoke_windows_build as smoke
+
+    def fail_scandir(_path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(smoke.os, "scandir", fail_scandir)
+
+    with pytest.raises(RuntimeError, match="scandir"):
+        smoke._tree_snapshot(tmp_path)
+
+
+def test_tree_snapshot_fails_closed_when_entry_stat_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import tools.smoke_windows_build as smoke
+
+    class FakeEntry:
+        name = "blocked"
+        path = str(tmp_path / "blocked")
+
+        def stat(self, *, follow_symlinks: bool):
+            assert not follow_symlinks
+            raise PermissionError("denied")
+
+    class FakeScandir:
+        def __enter__(self):
+            return iter([FakeEntry()])
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+    monkeypatch.setattr(smoke.os, "scandir", lambda _path: FakeScandir())
+
+    with pytest.raises(RuntimeError, match="stat"):
+        smoke._tree_snapshot(tmp_path)
+
+
+def test_tree_snapshot_fails_closed_when_digest_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import tools.smoke_windows_build as smoke
+
+    file_path = tmp_path / "data.bin"
+    file_path.write_bytes(b"data")
+    monkeypatch.setattr(
+        smoke,
+        "_file_digest",
+        lambda _path: (_ for _ in ()).throw(PermissionError("denied")),
+    )
+
+    with pytest.raises(RuntimeError, match="digest"):
+        smoke._tree_snapshot(tmp_path)
+
+
+def test_tree_snapshot_rejects_root_reparse_point(monkeypatch, tmp_path: Path) -> None:
+    import tools.smoke_windows_build as smoke
+
+    metadata = SimpleNamespace(
+        st_mode=stat.S_IFDIR,
+        st_size=0,
+        st_mtime_ns=1,
+        st_ctime_ns=1,
+        st_ino=1,
+        st_dev=1,
+        st_file_attributes=smoke.FILE_ATTRIBUTE_REPARSE_POINT,
+    )
+    monkeypatch.setattr(Path, "lstat", lambda _self: metadata)
+
+    with pytest.raises(RuntimeError, match="reparse"):
+        smoke._tree_snapshot(tmp_path)
+
+
+def test_cwd_snapshot_ignores_directory_mtime_only(tmp_path: Path) -> None:
+    import os
+
+    import tools.smoke_windows_build as smoke
+
+    before = smoke._tree_snapshot(tmp_path, include_directory_mtime=False)
+    metadata = tmp_path.stat()
+    os.utime(tmp_path, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1))
+    after = smoke._tree_snapshot(tmp_path, include_directory_mtime=False)
+
+    assert smoke._changed_entries(before, after) == []
+
+
+def test_cwd_snapshot_rejects_file_content_and_structure_mutations(tmp_path: Path) -> None:
+    import tools.smoke_windows_build as smoke
+
+    file_path = tmp_path / "data.txt"
+    file_path.write_text("before", encoding="utf-8")
+    before = smoke._tree_snapshot(tmp_path, include_directory_mtime=False)
+    file_path.write_text("after!", encoding="utf-8")
+    (tmp_path / "new-directory").mkdir()
+    after = smoke._tree_snapshot(tmp_path, include_directory_mtime=False)
+
+    changed = smoke._changed_entries(before, after)
+
+    assert Path("data.txt") in changed
+    assert Path("new-directory") in changed
 
 
 def test_smoke_script_can_import_its_build_helper() -> None:
