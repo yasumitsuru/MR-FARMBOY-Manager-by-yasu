@@ -21,12 +21,15 @@ from .fakes import ControlledOperationRunner
 
 
 BACKUP_ID = "save_1-20260810T120000Z-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+OTHER_BACKUP_ID = "save_2-20260810T130000Z-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 
-def backup_record(root: Path, backup_id: str = BACKUP_ID) -> BackupRecord:
+def backup_record(
+    root: Path, backup_id: str = BACKUP_ID, *, slot_number: int = 1
+) -> BackupRecord:
     return BackupRecord(
         backup_id=backup_id,
-        slot_number=1,
+        slot_number=slot_number,
         created_at_utc=datetime(2026, 8, 10, 12, tzinfo=UTC),
         destination=root / backup_id,
         file_count=2,
@@ -156,40 +159,77 @@ def test_create_uses_selected_slot_and_enqueues_one_refresh(tmp_path: Path, qapp
     assert len(runner._pending) == 1
 
 
-def test_restore_revalidates_active_slot_before_submit(tmp_path: Path, qapp) -> None:
-    restorer = Mock()
-    vm, runner, record = ready_backups_vm(tmp_path, restorer=restorer)
+def test_restore_uses_confirmation_snapshot_after_selection_changes(
+    tmp_path: Path, qapp
+) -> None:
+    backup_root = tmp_path / "backups"
+    original = backup_record(backup_root)
+    other = backup_record(backup_root, OTHER_BACKUP_ID, slot_number=2)
+    loader = Mock(
+        return_value=BackupDiscoveryResult(
+            (original, other), (), None, "2 backup(s) encontrado(s)."
+        )
+    )
+    restorer = Mock(return_value=restore_success(original))
+    vm, runner, record = ready_backups_vm(
+        tmp_path, loader=loader, restorer=restorer
+    )
     vm.selectBackup(record.backup_id)
 
     vm.requestRestore()
     vm.setSelectedSummary(SaveSlotSummary(SaveSlot(2, tmp_path / "save_2"), 1))
+    vm._selected_backup_id = other.backup_id
+    vm._backups_model.set_selected(other.backup_id)
     vm.confirmAction("restore", record.backup_id)
+    assert len(runner._pending) == 1
+    runner.complete_next()
 
-    assert restorer.call_count == 0
-    assert vm.mutationState == "idle"
-    assert runner._pending == []
+    restorer.assert_called_once_with(
+        SaveSlot(1, tmp_path / "save_1"),
+        tmp_path,
+        backup_root,
+        record.backup_id,
+        confirmed=True,
+    )
 
 
-def test_restore_rejects_same_slot_from_changed_save_root(tmp_path: Path, qapp) -> None:
-    restorer = Mock()
-    vm, runner, record = ready_backups_vm(tmp_path, restorer=restorer)
+def test_delete_uses_confirmation_snapshot_after_selection_changes(
+    tmp_path: Path, qapp
+) -> None:
+    backup_root = tmp_path / "backups"
+    original = backup_record(backup_root)
+    other = backup_record(backup_root, OTHER_BACKUP_ID, slot_number=2)
+    loader = Mock(
+        return_value=BackupDiscoveryResult(
+            (original, other), (), None, "2 backup(s) encontrado(s)."
+        )
+    )
+    deleter = Mock(return_value=delete_success(original.backup_id))
+    vm, runner, record = ready_backups_vm(tmp_path, loader=loader, deleter=deleter)
     vm.selectBackup(record.backup_id)
-    changes: list[tuple[bool, bool, bool]] = []
-    vm.changed.connect(
-        lambda: changes.append((vm.canCreate, vm.canRestore, vm.canDelete))
-    )
 
-    vm.requestRestore()
-    vm.setSelectedSummary(
-        SaveSlotSummary(SaveSlot(1, tmp_path / "other_root" / "save_1"), 2)
-    )
-    changes.clear()
-    vm.confirmAction("restore", record.backup_id)
+    vm.requestDelete()
+    vm._selected_backup_id = other.backup_id
+    vm._backups_model.set_selected(other.backup_id)
+    vm.confirmAction("delete", record.backup_id)
+    assert len(runner._pending) == 1
+    runner.complete_next()
 
-    assert restorer.call_count == 0
-    assert vm.mutationState == "idle"
+    deleter.assert_called_once_with(backup_root, record.backup_id, confirmed=True)
+
+
+def test_confirmation_rejects_backup_removed_after_request(tmp_path: Path, qapp) -> None:
+    deleter = Mock()
+    vm, runner, record = ready_backups_vm(tmp_path, deleter=deleter)
+    vm.selectBackup(record.backup_id)
+
+    vm.requestDelete()
+    vm._backups = ()
+    vm._backups_model.replace(())
+    vm.confirmAction("delete", record.backup_id)
+
+    assert deleter.call_count == 0
     assert runner._pending == []
-    assert changes == [(True, True, True)]
 
 
 def test_discovery_error_exposes_only_public_message(tmp_path: Path, qapp) -> None:

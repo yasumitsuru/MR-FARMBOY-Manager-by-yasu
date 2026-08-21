@@ -64,7 +64,9 @@ class BackupsViewModel(QObject):
         self._refresh_keeps_status = False
         self._mutation_request: int | None = None
         self._mutation_context: tuple[str, str] | None = None
-        self._pending_confirmation: tuple[str, str, SaveSlotSummary | None] | None = None
+        self._pending_confirmation: tuple[
+            str, BackupRecord, SaveSlotSummary | None
+        ] | None = None
         runner.succeeded.connect(self._operation_succeeded)
         runner.failed.connect(self._operation_failed)
 
@@ -151,20 +153,20 @@ class BackupsViewModel(QObject):
     @Slot(str, str)
     def confirmAction(self, action: str, backup_id: str) -> None:
         pending = self._pending_confirmation
-        if pending is None or pending[:2] != (action, backup_id):
+        if pending is None:
+            return
+        pending_action, record, confirmed_summary = pending
+        if (pending_action, record.backup_id) != (action, backup_id):
             return
         before = self._public_values()
-        record = self._backup_for(backup_id)
-        if record is None or self._selected_backup_id != backup_id:
+        if self._backup_for(record.backup_id) is None:
             self._clear_confirmation()
             self._notify_if_changed(before)
             return
         if action == "restore":
-            confirmed_summary = pending[2]
             if (
                 confirmed_summary is None
-                or self._selected_summary is not confirmed_summary
-                or self._summary_for(record) is not confirmed_summary
+                or confirmed_summary.slot.number != record.slot_number
             ):
                 self._clear_confirmation()
                 self._notify_if_changed(before)
@@ -172,12 +174,12 @@ class BackupsViewModel(QObject):
             self._clear_confirmation()
             self._submit_mutation(
                 "restore",
-                backup_id,
+                record.backup_id,
                 lambda: self._restorer(
                     confirmed_summary.slot,
                     confirmed_summary.slot.path.parent,
                     self._backup_root,
-                    backup_id,
+                    record.backup_id,
                     confirmed=True,
                 ),
             )
@@ -186,8 +188,10 @@ class BackupsViewModel(QObject):
             self._clear_confirmation()
             self._submit_mutation(
                 "delete",
-                backup_id,
-                lambda: self._deleter(self._backup_root, backup_id, confirmed=True),
+                record.backup_id,
+                lambda: self._deleter(
+                    self._backup_root, record.backup_id, confirmed=True
+                ),
             )
             return
         self._clear_confirmation()
@@ -211,7 +215,7 @@ class BackupsViewModel(QObject):
         summary: SaveSlotSummary | None,
     ) -> None:
         before = self._public_values()
-        self._pending_confirmation = action, record.backup_id, summary
+        self._pending_confirmation = action, record, summary
         self._notify_if_changed(before)
         snapshot_message = (
             f"Slot {record.slot_number}\nBackup: {record.backup_id}\n\n{message}"
