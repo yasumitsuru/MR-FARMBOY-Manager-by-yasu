@@ -181,6 +181,9 @@ def test_restore_uses_confirmation_snapshot_after_selection_changes(
     vm._selected_backup_id = other.backup_id
     vm._backups_model.set_selected(other.backup_id)
     vm.confirmAction("restore", record.backup_id)
+    vm.confirmAction("restore", record.backup_id)
+
+    assert vm._pending_confirmation is None
     assert len(runner._pending) == 1
     runner.complete_next()
 
@@ -191,6 +194,7 @@ def test_restore_uses_confirmation_snapshot_after_selection_changes(
         record.backup_id,
         confirmed=True,
     )
+    assert len(runner._pending) == 1
 
 
 def test_delete_uses_confirmation_snapshot_after_selection_changes(
@@ -212,10 +216,14 @@ def test_delete_uses_confirmation_snapshot_after_selection_changes(
     vm._selected_backup_id = other.backup_id
     vm._backups_model.set_selected(other.backup_id)
     vm.confirmAction("delete", record.backup_id)
+    vm.confirmAction("delete", record.backup_id)
+
+    assert vm._pending_confirmation is None
     assert len(runner._pending) == 1
     runner.complete_next()
 
     deleter.assert_called_once_with(backup_root, record.backup_id, confirmed=True)
+    assert len(runner._pending) == 1
 
 
 def test_confirmation_rejects_backup_removed_after_request(tmp_path: Path, qapp) -> None:
