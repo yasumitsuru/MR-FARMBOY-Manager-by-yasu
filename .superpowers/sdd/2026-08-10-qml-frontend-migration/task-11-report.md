@@ -73,3 +73,28 @@
 - `python -m compileall -q src tests` e `git diff --check` foram executados com
   sucesso antes do commit `ff81f00`. Não houve full suite executada pelo
   implementador nesta rodada; o gate fica para o controlador com basetemp seguro.
+
+## Fix round 4
+
+- Causa confirmada: `_request_details()` mudava `detailsState` para `loading` e
+  limpava o modelo visível, mas preservava `_loaded_details` do slot anterior até
+  o worker terminar. A correção mínima invalida esse DTO antes do submit e antes
+  do `selectedSummaryChanged` síncrono de `selectSlot`.
+- RED, com `PYTHONPATH=src` e `QT_QPA_PLATFORM=offscreen`:
+  `python -m pytest -q tests/presentation/test_saves_view_model.py::test_new_selection_signal_never_exposes_previous_loaded_details` retornou
+  `1 failed`, observando `('loading', SaveSlotDetails(...))` em vez de
+  `('loading', None)`.
+- GREEN isolado: o mesmo comando retornou `1 passed`. No mutation check, remover
+  somente a invalidação fez o teste retornar `1 failed`; após restaurá-la, o
+  comando retornou novamente `1 passed`.
+- Direcionado exigido:
+  `python -m pytest -q tests/presentation/test_saves_view_model.py tests/presentation/test_app_controller.py tests/test_qml_e2e.py`
+  retornou `16 passed`.
+- Presentation/QML relacionado:
+  `python -m pytest -q tests/presentation tests/qml tests/test_qml_e2e.py`
+  retornou `96 passed`.
+- Suíte completa offscreen: `python -m pytest -q` retornou
+  `774 passed, 9 skipped` em `12.19s` (783 itens coletados).
+- `python -m compileall -q src tests` e `git diff --check` concluíram com código
+  zero e sem saída. Todos os testes usaram o Temp padrão seguro do pytest fora
+  do sandbox; nenhum diretório `.pytest-round*` foi criado ou reutilizado.

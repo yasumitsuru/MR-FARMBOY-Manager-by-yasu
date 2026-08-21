@@ -204,6 +204,7 @@ class SavesViewModel(QObject):
     def _request_details(self, summary: SaveSlotSummary) -> None:
         self._detail_generation += 1
         generation = self._detail_generation
+        self._loaded_details = None
         self._set_values(details_state="loading", error_message="")
         self._details.clear()
         request_id = self._runner.submit(
