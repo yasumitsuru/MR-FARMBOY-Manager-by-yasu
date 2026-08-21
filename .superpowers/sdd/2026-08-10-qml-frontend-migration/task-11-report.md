@@ -57,3 +57,19 @@
 - A recomputação real do dashboard permaneceu ativa; o controller agora mantém
   o DTO de detalhes carregado para projetar o dashboard sem confundir o
   ViewModel QML com o DTO de domínio.
+
+## Fix round 3
+
+- Finding: `SavesViewModel.selectSlot` emitia `selectedSummaryChanged` antes de
+  iniciar o novo request de detalhes. Um subscriber síncrono podia então ver
+  `detailsState="ready"` e `_loaded_details` do slot anterior durante a troca.
+- Teste adicionado: `tests/presentation/test_saves_view_model.py::test_new_selection_signal_never_exposes_previous_loaded_details`.
+- RED executado: `PYTHONPATH=src; QT_QPA_PLATFORM=offscreen; pytest -q --basetemp '.pytest-round13' tests/presentation/test_saves_view_model.py::test_new_selection_signal_never_exposes_previous_loaded_details`.
+  Falhou como esperado: observou `('ready', SaveSlotDetails(...))` em vez de
+  `('loading', None)`.
+- GREEN isolado: o mesmo comando retornou `1 passed` após inverter a ordem.
+- A tentativa focada maior foi `PYTHONPATH=src; QT_QPA_PLATFORM=offscreen; pytest -q --basetemp '.pytest-round13' tests/presentation/test_saves_view_model.py tests/presentation/test_app_controller.py tests/test_qml_e2e.py`;
+  o pytest encontrou `PermissionError` ao limpar `.pytest-round13`.
+- `python -m compileall -q src tests` e `git diff --check` foram executados com
+  sucesso antes do commit `ff81f00`. Não houve full suite executada pelo
+  implementador nesta rodada; o gate fica para o controlador com basetemp seguro.
