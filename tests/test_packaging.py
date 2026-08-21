@@ -75,6 +75,130 @@ def test_smoke_detects_qml_resource_load_and_readiness(tmp_path: Path) -> None:
     assert _required_events_were_logged(tmp_path / "runtime")
 
 
+@pytest.mark.parametrize(
+    "events, expected",
+    [
+        ("", False),
+        ("qml.load.completed\n", False),
+        ("qml.controller.initialized\n", False),
+        ("qml.load.completed\nqml.controller.initialized\n", True),
+    ],
+)
+def test_smoke_requires_both_qml_load_and_readiness_events(
+    tmp_path: Path, events: str, expected: bool
+) -> None:
+    from tools.smoke_windows_build import _required_events_were_logged
+
+    log_path = tmp_path / "runtime" / "logs" / "mr-farmboy-manager.log"
+    log_path.parent.mkdir(parents=True)
+    log_path.write_text(events, encoding="utf-8")
+
+    assert _required_events_were_logged(tmp_path / "runtime") is expected
+
+
+def test_smoke_rejects_writes_to_isolated_temp_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import tools.smoke_windows_build as smoke
+
+    executable = tmp_path / "MR-FARMBOY-Manager.exe"
+    executable.touch()
+
+    class FakeProcess:
+        def __init__(self, _command, *, env, **_kwargs) -> None:
+            runtime_root = Path(env["MR_FARMBOY_RUNTIME_ROOT"])
+            log_path = runtime_root / "logs" / smoke.LOG_FILENAME
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "qml.load.completed\nqml.controller.initialized\n", encoding="utf-8"
+            )
+            temp_root = runtime_root.parent / "temp"
+            temp_root.mkdir(exist_ok=True)
+            (temp_root / "unexpected-write.txt").write_text("written", encoding="utf-8")
+            self.running = True
+
+        def poll(self):
+            return None if self.running else 0
+
+        def terminate(self) -> None:
+            self.running = False
+
+        def wait(self, timeout: float) -> int:
+            self.running = False
+            return 0
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", FakeProcess)
+
+    with pytest.raises(RuntimeError, match="TEMP"):
+        smoke.smoke_test(executable)
+
+
+def test_smoke_accepts_clean_isolated_roots(monkeypatch, tmp_path: Path) -> None:
+    import tools.smoke_windows_build as smoke
+
+    executable = tmp_path / "MR-FARMBOY-Manager.exe"
+    executable.touch()
+
+    class FakeProcess:
+        def __init__(self, _command, *, env, **_kwargs) -> None:
+            runtime_root = Path(env["MR_FARMBOY_RUNTIME_ROOT"])
+            log_path = runtime_root / "logs" / smoke.LOG_FILENAME
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "qml.load.completed\nqml.controller.initialized\n", encoding="utf-8"
+            )
+            self.running = True
+
+        def poll(self):
+            return None if self.running else 0
+
+        def terminate(self) -> None:
+            self.running = False
+
+        def wait(self, timeout: float) -> int:
+            self.running = False
+            return 0
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", FakeProcess)
+
+    smoke.smoke_test(executable)
+
+
+def test_smoke_disables_qml_disk_cache(monkeypatch, tmp_path: Path) -> None:
+    import tools.smoke_windows_build as smoke
+
+    executable = tmp_path / "MR-FARMBOY-Manager.exe"
+    executable.touch()
+    captured_environment: dict[str, str] = {}
+
+    class FakeProcess:
+        def __init__(self, _command, *, env, **_kwargs) -> None:
+            captured_environment.update(env)
+            runtime_root = Path(env["MR_FARMBOY_RUNTIME_ROOT"])
+            log_path = runtime_root / "logs" / smoke.LOG_FILENAME
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "qml.load.completed\nqml.controller.initialized\n", encoding="utf-8"
+            )
+            self.running = True
+
+        def poll(self):
+            return None if self.running else 0
+
+        def terminate(self) -> None:
+            self.running = False
+
+        def wait(self, timeout: float) -> int:
+            self.running = False
+            return 0
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", FakeProcess)
+
+    smoke.smoke_test(executable)
+
+    assert captured_environment["QML_DISABLE_DISK_CACHE"] == "1"
+
+
 def test_smoke_script_can_import_its_build_helper() -> None:
     result = subprocess.run(
         [sys.executable, "tools/smoke_windows_build.py", "missing.exe"],
